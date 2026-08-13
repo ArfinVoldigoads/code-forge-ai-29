@@ -148,13 +148,16 @@ export function ChatView({ chatId }: { chatId: string }) {
                 text={live.thinking}
                 defaultOpen
               />
+              <ToolActivity tools={live.tools} />
               {live.answer ? (
                 <Markdown text={live.answer} />
               ) : (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Working…
+                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                  {live.phase === "acting" ? "Working in the sandbox…" : "Working…"}
                 </div>
               )}
+
             </div>
           )}
 
