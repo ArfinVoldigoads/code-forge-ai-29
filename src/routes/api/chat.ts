@@ -43,7 +43,7 @@ export const Route = createFileRoute("/api/chat")({
 
         const { db, audit } = await import("@/lib/db.server");
         const { buildModel } = await import("@/lib/ai.server");
-        const { streamText } = await import("ai");
+        const { streamText, stepCountIs } = await import("ai");
 
         // Idempotency: never generate the same assistant message twice.
         const { data: dupe } = await db
