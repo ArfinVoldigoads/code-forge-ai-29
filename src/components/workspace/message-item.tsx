@@ -1,3 +1,4 @@
+import { ToolActivity, toolsFromEvents } from "@/components/workspace/tool-activity";
 import { useState } from "react";
 import {
   AlertTriangle,
