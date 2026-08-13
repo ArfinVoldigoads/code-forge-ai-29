@@ -1,3 +1,4 @@
+import { ToolActivity } from "@/components/workspace/tool-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Brain, ListChecks, Loader2 } from "lucide-react";
@@ -53,7 +54,7 @@ export function ChatView({ chatId }: { chatId: string }) {
     if (el && atBottomRef.current) el.scrollTop = el.scrollHeight;
   };
 
-  useEffect(scrollToBottom, [chatQuery.data?.messages.length, live.answer, live.planning]);
+  useEffect(scrollToBottom, [chatQuery.data?.messages.length, live.answer, live.planning, live.tools.length]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -148,13 +149,16 @@ export function ChatView({ chatId }: { chatId: string }) {
                 text={live.thinking}
                 defaultOpen
               />
+              <ToolActivity tools={live.tools} />
               {live.answer ? (
                 <Markdown text={live.answer} />
               ) : (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Working…
+                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                  {live.phase === "acting" ? "Working in the sandbox…" : "Working…"}
                 </div>
               )}
+
             </div>
           )}
 

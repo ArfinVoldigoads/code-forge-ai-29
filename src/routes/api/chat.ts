@@ -43,7 +43,7 @@ export const Route = createFileRoute("/api/chat")({
 
         const { db, audit } = await import("@/lib/db.server");
         const { buildModel } = await import("@/lib/ai.server");
-        const { streamText } = await import("ai");
+        const { streamText, stepCountIs } = await import("ai");
 
         // Idempotency: never generate the same assistant message twice.
         const { data: dupe } = await db
@@ -116,10 +116,23 @@ export const Route = createFileRoute("/api/chat")({
           .map((s) => `### ${s.name}\n${s.instructions}`)
           .join("\n\n");
 
+        const { getE2BKey } = await import("@/lib/e2b.server");
+        const e2bKey = await getE2BKey();
+
         const systemPrompt = `You are an expert AI coding agent operating inside a developer workspace.
 You reason first, then act. Be precise, concrete and honest about limitations.
 Never reveal API keys, tokens, or environment variable values.
 Format code with fenced blocks that include the language.
+
+## Sandbox
+${
+  e2bKey
+    ? `You have a real Linux sandbox at /home/user/project. Use the tools write_file, read_file,
+list_files and run_command to actually create and verify code instead of only describing it.
+Write files first, then run commands to install dependencies or run tests, and report real output.`
+    : `No sandbox is configured, so you cannot execute code. Answer with code blocks and tell the user
+they can enable execution by adding an E2B API key in Settings → E2B.`
+}
 
 ## Active skills
 ${skillBlock || "(none enabled)"}`;
@@ -128,6 +141,7 @@ ${skillBlock || "(none enabled)"}`;
           role: m.role as "user" | "assistant" | "system",
           content: m.content,
         }));
+
 
         const encoder = new TextEncoder();
         let cancelled = false;
@@ -165,13 +179,29 @@ ${skillBlock || "(none enabled)"}`;
               }
               send({ type: "planning-finish" });
 
-              // ---- answer phase ----
-              const main = streamText({
+              // ---- answer phase (with sandbox tools when E2B is configured) ----
+              let tools: Record<string, unknown> | undefined;
+              if (e2bKey) {
+                const { buildAgentTools } = await import("@/lib/agent-tools.server");
+                tools = buildAgentTools({
+                  chatId,
+                  apiKey: e2bKey,
+                  send,
+                  record: (event) => events.push(event),
+                });
+              }
+
+              const mainOptions = {
                 model: buildModel(provider, modelRow.model_id),
                 system: `${systemPrompt}\n\n## Plan agreed for this turn\n${planning}`,
                 messages,
                 abortSignal: request.signal,
-              });
+                ...(tools ? { tools, stopWhen: stepCountIs(50) } : {}),
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              } as any;
+              const main = streamText(mainOptions);
+
+
 
               let thinkingOpen = false;
               for await (const part of main.fullStream) {

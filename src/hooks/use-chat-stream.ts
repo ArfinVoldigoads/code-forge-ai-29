@@ -1,11 +1,12 @@
 import { useCallback, useRef, useState } from "react";
-import type { StreamEvent } from "@/lib/types";
+import type { StreamEvent, ToolEventState } from "@/lib/types";
 
 export type LiveState = {
   planning: string;
   thinking: string;
   answer: string;
-  phase: "idle" | "planning" | "thinking" | "answering";
+  tools: ToolEventState[];
+  phase: "idle" | "planning" | "thinking" | "answering" | "acting";
   error: string | null;
   cancelled: boolean;
 };
@@ -14,10 +15,12 @@ const EMPTY: LiveState = {
   planning: "",
   thinking: "",
   answer: "",
+  tools: [],
   phase: "idle",
   error: null,
   cancelled: false,
 };
+
 
 export function useChatStream(onFinish: () => void | Promise<void>) {
   const [live, setLive] = useState<LiveState>(EMPTY);
@@ -108,10 +111,43 @@ function applyEvent(prev: LiveState, event: StreamEvent): LiveState {
       return { ...prev, thinking: prev.thinking + event.text };
     case "assistant-delta":
       return { ...prev, phase: "answering", answer: prev.answer + event.text };
+    case "tool-start":
+      return {
+        ...prev,
+        phase: "acting",
+        tools: [
+          ...prev.tools,
+          { id: event.id, name: event.name, input: event.input, logs: [], status: "running" },
+        ],
+      };
+    case "tool-result":
+      return {
+        ...prev,
+        tools: prev.tools.map((t) =>
+          t.id === event.id
+            ? {
+                ...t,
+                status: event.error ? "error" : "done",
+                output: event.output,
+                ...(event.error ? { error: event.error } : {}),
+              }
+            : t,
+        ),
+      };
+    case "command-output":
+      return {
+        ...prev,
+        tools: prev.tools.map((t) =>
+          t.status === "running" && t.name === "run_command"
+            ? { ...t, logs: [...t.logs, event.text].slice(-200) }
+            : t,
+        ),
+      };
     case "error":
       return { ...prev, error: event.message, phase: "idle" };
     case "cancelled":
       return { ...prev, cancelled: true, phase: "idle" };
+
     default:
       return prev;
   }

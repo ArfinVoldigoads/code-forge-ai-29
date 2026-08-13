@@ -1,3 +1,4 @@
+import { ToolActivity, toolsFromEvents } from "@/components/workspace/tool-activity";
 import { useState } from "react";
 import {
   AlertTriangle,
@@ -142,6 +143,10 @@ export function MessageItem({
         icon={<Brain className="h-3.5 w-3.5" />}
         text={message.thinking ?? ""}
       />
+
+      <ToolActivity tools={toolsFromEvents(message.events)} />
+
+
 
       {message.error && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
