@@ -191,13 +191,16 @@ ${skillBlock || "(none enabled)"}`;
                 });
               }
 
-              const main = streamText({
+              const mainOptions = {
                 model: buildModel(provider, modelRow.model_id),
                 system: `${systemPrompt}\n\n## Plan agreed for this turn\n${planning}`,
                 messages,
                 abortSignal: request.signal,
-                ...(tools ? { tools: tools as never, stopWhen: stepCountIs(50) } : {}),
-              });
+                ...(tools ? { tools, stopWhen: stepCountIs(50) } : {}),
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              } as any;
+              const main = streamText(mainOptions);
+
 
 
               let thinkingOpen = false;
