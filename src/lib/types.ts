@@ -1,17 +1,6 @@
-export type ProviderType = "lovable" | "openai" | "anthropic" | "google" | "openai-compatible";
-
-export const PROVIDER_TYPES: { value: ProviderType; label: string; needsKey: boolean }[] = [
-  { value: "lovable", label: "Lovable AI Gateway", needsKey: false },
-  { value: "openai", label: "OpenAI", needsKey: true },
-  { value: "anthropic", label: "Anthropic", needsKey: true },
-  { value: "google", label: "Google AI", needsKey: true },
-  { value: "openai-compatible", label: "OpenAI-compatible", needsKey: true },
-];
-
 export type ProviderDTO = {
   id: string;
   name: string;
-  type: ProviderType;
   keyMask: string | null;
   hasKey: boolean;
   baseUrl: string | null;
@@ -26,7 +15,6 @@ export type ModelDTO = {
   id: string;
   providerId: string | null;
   providerName: string | null;
-  providerType: ProviderType | null;
   displayName: string;
   modelId: string;
   description: string | null;

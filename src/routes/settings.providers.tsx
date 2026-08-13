@@ -7,13 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { StatusPill } from "@/components/workspace/status-pill";
 import {
   deleteProvider,
@@ -21,14 +14,13 @@ import {
   saveProvider,
   testProvider,
 } from "@/lib/settings.functions";
-import { PROVIDER_TYPES, type ProviderDTO, type ProviderType } from "@/lib/types";
+import type { ProviderDTO } from "@/lib/types";
 
 export const Route = createFileRoute("/settings/providers")({ component: ProvidersPage });
 
 type Draft = {
   id?: string;
   name: string;
-  type: ProviderType;
   apiKey: string;
   baseUrl: string;
   orgId: string;
@@ -37,7 +29,6 @@ type Draft = {
 
 const emptyDraft: Draft = {
   name: "",
-  type: "openai",
   apiKey: "",
   baseUrl: "",
   orgId: "",
@@ -57,7 +48,6 @@ function ProvidersPage() {
         data: {
           ...(d.id ? { id: d.id } : {}),
           name: d.name.trim(),
-          type: d.type,
           apiKey: d.apiKey.trim() || null,
           baseUrl: d.baseUrl.trim() || null,
           orgId: d.orgId.trim() || null,
@@ -91,13 +81,13 @@ function ProvidersPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const needsKey = draft ? PROVIDER_TYPES.find((p) => p.value === draft.type)?.needsKey : false;
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Connect model providers. Keys are stored server-side and never sent to the browser.
+          Connect any OpenAI-compatible endpoint: paste its base URL (e.g.
+          https://api.gubukai.com/v1) and API key. Keys are stored server-side and never sent to the
+          browser.
         </p>
         <Button size="sm" onClick={() => setDraft({ ...emptyDraft })}>
           <Plus className="mr-1.5 h-4 w-4" /> Add
@@ -117,39 +107,19 @@ function ProvidersPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Type</Label>
-              <Select
-                value={draft.type}
-                onValueChange={(v) => setDraft({ ...draft, type: v as ProviderType })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROVIDER_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="p-key">API key</Label>
+              <Input
+                id="p-key"
+                type="password"
+                autoComplete="off"
+                placeholder={draft.id ? "Leave blank to keep current key" : "sk-..."}
+                value={draft.apiKey}
+                maxLength={400}
+                onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })}
+              />
             </div>
-            {needsKey && (
-              <div className="space-y-2">
-                <Label htmlFor="p-key">API key</Label>
-                <Input
-                  id="p-key"
-                  type="password"
-                  autoComplete="off"
-                  placeholder={draft.id ? "Leave blank to keep current key" : ""}
-                  value={draft.apiKey}
-                  maxLength={400}
-                  onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })}
-                />
-              </div>
-            )}
             <div className="space-y-2">
-              <Label htmlFor="p-url">Base URL (optional)</Label>
+              <Label htmlFor="p-url">Base URL</Label>
               <Input
                 id="p-url"
                 placeholder="https://api.example.com/v1"
@@ -194,9 +164,8 @@ function ProvidersPage() {
                 {!p.enabled && <span className="text-[11px] text-muted-foreground">disabled</span>}
               </div>
               <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                {p.type}
+                {p.baseUrl ?? "Lovable AI Gateway"}
                 {p.keyMask ? ` · ${p.keyMask}` : ""}
-                {p.baseUrl ? ` · ${p.baseUrl}` : ""}
               </p>
             </div>
             <div className="flex items-center gap-1">
@@ -215,7 +184,6 @@ function ProvidersPage() {
                   setDraft({
                     id: p.id,
                     name: p.name,
-                    type: p.type,
                     apiKey: "",
                     baseUrl: p.baseUrl ?? "",
                     orgId: p.orgId ?? "",
