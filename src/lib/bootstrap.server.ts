@@ -22,9 +22,12 @@ export async function ensureDefaults(): Promise<void> {
     } as never)
     .select("id")
     .single();
-  if (error || !provider) return;
+  if (error || !provider) {
+    console.error("[bootstrap] provider insert failed", error);
+    return;
+  }
 
-  await db.from("models").insert([
+  const { error: modelError } = await db.from("models").insert([
     {
       provider_id: provider.id,
       display_name: "Gemini 3.5 Flash",
