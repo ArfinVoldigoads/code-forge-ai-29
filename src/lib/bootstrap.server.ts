@@ -66,4 +66,5 @@ export async function ensureDefaults(): Promise<void> {
       sort_order: 4,
     },
   ] as never);
+  if (modelError) console.error("[bootstrap] model insert failed", modelError);
 }
