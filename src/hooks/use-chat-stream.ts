@@ -1,11 +1,12 @@
 import { useCallback, useRef, useState } from "react";
-import type { StreamEvent } from "@/lib/types";
+import type { StreamEvent, ToolEventState } from "@/lib/types";
 
 export type LiveState = {
   planning: string;
   thinking: string;
   answer: string;
-  phase: "idle" | "planning" | "thinking" | "answering";
+  tools: ToolEventState[];
+  phase: "idle" | "planning" | "thinking" | "answering" | "acting";
   error: string | null;
   cancelled: boolean;
 };
@@ -14,10 +15,12 @@ const EMPTY: LiveState = {
   planning: "",
   thinking: "",
   answer: "",
+  tools: [],
   phase: "idle",
   error: null,
   cancelled: false,
 };
+
 
 export function useChatStream(onFinish: () => void | Promise<void>) {
   const [live, setLive] = useState<LiveState>(EMPTY);
