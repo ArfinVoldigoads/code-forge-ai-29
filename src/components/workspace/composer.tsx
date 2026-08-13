@@ -57,7 +57,7 @@ export function Composer({
           maxLength={30000}
         />
         <div className="flex items-center gap-2">
-          <Select {...(modelId ? { value: modelId } : {})} onValueChange={onModelChange}>
+          <Select value={modelId ?? ""} onValueChange={onModelChange}>
             <SelectTrigger
               className="h-9 min-w-0 flex-1 text-xs sm:max-w-64"
               aria-label="Model selector"

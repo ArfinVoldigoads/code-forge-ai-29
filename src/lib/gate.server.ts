@@ -1,17 +1,32 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { useSession } from "@tanstack/react-start/server";
+import { useSession, getRequest } from "@tanstack/react-start/server";
 
 export type GateSession = { unlocked?: boolean; since?: number };
 
+function isSecureRequest(): boolean {
+  try {
+    const request = getRequest();
+    const url = new URL(request.url);
+    const proto = request.headers.get("x-forwarded-proto");
+    if (proto) return proto.split(",")[0]!.trim() === "https";
+    return url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function sessionConfig() {
+  // The preview runs inside a cross-site iframe, where SameSite=Lax cookies are
+  // dropped. Use SameSite=None (requires Secure) whenever the request is HTTPS.
+  const secure = isSecureRequest();
   return {
     password: process.env["SESSION_SECRET"]!,
     name: "agentkit-session",
     maxAge: 60 * 60 * 24 * 7,
     cookie: {
       httpOnly: true,
-      secure: true,
-      sameSite: "lax" as const,
+      secure,
+      sameSite: (secure ? "none" : "lax") as "none" | "lax",
       path: "/",
     },
   };
