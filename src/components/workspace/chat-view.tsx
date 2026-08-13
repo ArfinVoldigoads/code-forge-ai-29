@@ -1,3 +1,4 @@
+import { ToolActivity } from "@/components/workspace/tool-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Brain, ListChecks, Loader2 } from "lucide-react";
@@ -53,7 +54,7 @@ export function ChatView({ chatId }: { chatId: string }) {
     if (el && atBottomRef.current) el.scrollTop = el.scrollHeight;
   };
 
-  useEffect(scrollToBottom, [chatQuery.data?.messages.length, live.answer, live.planning]);
+  useEffect(scrollToBottom, [chatQuery.data?.messages.length, live.answer, live.planning, live.tools.length]);
 
   const onScroll = () => {
     const el = scrollRef.current;
