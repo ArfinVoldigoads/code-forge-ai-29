@@ -114,7 +114,15 @@ export const testProvider = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Provider not found");
 
-    const result = await probeProvider(row);
+    const { data: probeModel } = await db
+      .from("models")
+      .select("model_id")
+      .eq("provider_id", data.id)
+      .order("is_default", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const result = await probeProvider(row, probeModel?.model_id ?? null);
     await db
       .from("providers")
       .update({

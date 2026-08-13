@@ -50,7 +50,8 @@ function modelListUrls(baseURL: string): string[] {
 /** Real connectivity probe against the provider's own OpenAI-compatible API. */
 export async function probeProvider(
   provider: ProviderRow,
-  timeoutMs = 15000,
+  probeModelId?: string | null,
+  timeoutMs = 20000,
 ): Promise<{ ok: boolean; message: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -59,6 +60,28 @@ export async function probeProvider(
     const baseURL = baseUrlFor(provider);
     const headers: Record<string, string> = { Authorization: `Bearer ${apiKey}` };
     if (isLovableGateway(provider)) headers["Lovable-API-Key"] = apiKey;
+
+    const chatProbe = async (modelId: string) => {
+      const res = await fetch(`${baseURL}/chat/completions`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: modelId,
+          messages: [{ role: "user", content: "ping" }],
+          max_completion_tokens: 8,
+        }),
+        signal: controller.signal,
+      });
+      const body = (await res.text()).slice(0, 200);
+      return res.ok
+        ? { ok: true, message: `Connected · ${modelId} responded` }
+        : { ok: false, message: `HTTP ${res.status}: ${body}` };
+    };
+
+    // The Lovable AI Gateway does not expose /models — probe with a real call.
+    if (isLovableGateway(provider)) {
+      return await chatProbe(probeModelId || "google/gemini-3.1-flash-lite");
+    }
 
     let last = "";
     for (const url of modelListUrls(baseURL)) {
@@ -81,6 +104,11 @@ export async function probeProvider(
       if (res.status === 401 || res.status === 403) {
         return { ok: false, message: `${last} — check the API key.` };
       }
+    }
+    if (probeModelId) {
+      const chat = await chatProbe(probeModelId);
+      if (chat.ok) return chat;
+      return { ok: false, message: chat.message };
     }
     return {
       ok: false,
