@@ -7,7 +7,6 @@ import { db } from "./db.server";
 export async function ensureDefaults(): Promise<void> {
   const { count } = await db.from("providers").select("id", { count: "exact", head: true });
   if ((count ?? 0) > 0) return;
-  if (!process.env["LOVABLE_API_KEY"]) return;
 
   const { data: provider, error } = await db
     .from("providers")
