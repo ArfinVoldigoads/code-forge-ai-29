@@ -15,7 +15,6 @@ export type ModelDTO = {
   id: string;
   providerId: string | null;
   providerName: string | null;
-  providerType: ProviderType | null;
   displayName: string;
   modelId: string;
   description: string | null;

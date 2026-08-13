@@ -1,15 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { ModelDTO, ProviderDTO, ProviderType, SkillDTO } from "./types";
+import type { ModelDTO, ProviderDTO, SkillDTO } from "./types";
 
 const idSchema = z.object({ id: z.string().uuid() });
 
 const providerInput = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(80),
-  type: z.enum(["lovable", "openai", "anthropic", "google", "openai-compatible"]),
   apiKey: z.string().trim().max(400).optional().nullable(),
-  baseUrl: z.string().trim().url().max(300).optional().nullable().or(z.literal("")),
+  baseUrl: z.string().trim().max(300).optional().nullable(),
   orgId: z.string().trim().max(120).optional().nullable(),
   enabled: z.boolean().default(true),
 });
@@ -45,7 +44,6 @@ export const listProviders = createServerFn({ method: "GET" }).handler(async () 
   return (data ?? []).map<ProviderDTO>((p) => ({
     id: p.id,
     name: p.name,
-    type: p.type as ProviderType,
     keyMask: maskKey(p.api_key),
     hasKey: Boolean(p.api_key) || p.type === "lovable",
     baseUrl: p.base_url,
@@ -66,7 +64,6 @@ export const saveProvider = createServerFn({ method: "POST" })
 
     const patch: Record<string, unknown> = {
       name: data.name,
-      type: data.type,
       base_url: data.baseUrl ? data.baseUrl : null,
       org_id: data.orgId || null,
       enabled: data.enabled,
@@ -152,7 +149,6 @@ export const listModels = createServerFn({ method: "GET" }).handler(async () => 
       id: m.id,
       providerId: m.provider_id,
       providerName: provider?.name ?? null,
-      providerType: (provider?.type as ProviderType) ?? null,
       displayName: m.display_name,
       modelId: m.model_id,
       description: m.description,
