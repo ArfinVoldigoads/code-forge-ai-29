@@ -45,6 +45,7 @@ export async function ensureDefaults(): Promise<void> {
       description: "Strongest Gemini for complex multi-step reasoning.",
       context_window: 1_000_000,
       vision: true,
+      is_default: false,
       sort_order: 2,
     },
     {
@@ -54,6 +55,7 @@ export async function ensureDefaults(): Promise<void> {
       description: "Advanced reasoning and code generation.",
       context_window: 400_000,
       vision: true,
+      is_default: false,
       sort_order: 3,
     },
     {
@@ -63,6 +65,7 @@ export async function ensureDefaults(): Promise<void> {
       description: "Balanced cost and capability.",
       context_window: 400_000,
       vision: true,
+      is_default: false,
       sort_order: 4,
     },
   ] as never);
