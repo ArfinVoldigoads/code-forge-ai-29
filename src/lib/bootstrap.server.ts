@@ -5,7 +5,10 @@ import { db } from "./db.server";
  * first time settings are opened, so chat works before any external key exists.
  */
 export async function ensureDefaults(): Promise<void> {
-  const { count } = await db.from("providers").select("id", { count: "exact", head: true });
+  const { count, error: countError } = await db
+    .from("providers")
+    .select("id", { count: "exact", head: true });
+  if (countError) console.error("[bootstrap] count providers failed", countError);
   if ((count ?? 0) > 0) return;
 
   const { data: provider, error } = await db
