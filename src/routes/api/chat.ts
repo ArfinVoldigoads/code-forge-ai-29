@@ -179,13 +179,26 @@ ${skillBlock || "(none enabled)"}`;
               }
               send({ type: "planning-finish" });
 
-              // ---- answer phase ----
+              // ---- answer phase (with sandbox tools when E2B is configured) ----
+              let tools: Record<string, unknown> | undefined;
+              if (e2bKey) {
+                const { buildAgentTools } = await import("@/lib/agent-tools.server");
+                tools = buildAgentTools({
+                  chatId,
+                  apiKey: e2bKey,
+                  send,
+                  record: (event) => events.push(event),
+                });
+              }
+
               const main = streamText({
                 model: buildModel(provider, modelRow.model_id),
                 system: `${systemPrompt}\n\n## Plan agreed for this turn\n${planning}`,
                 messages,
                 abortSignal: request.signal,
+                ...(tools ? { tools: tools as never, stopWhen: stepCountIs(50) } : {}),
               });
+
 
               let thinkingOpen = false;
               for await (const part of main.fullStream) {
