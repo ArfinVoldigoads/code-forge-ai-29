@@ -61,7 +61,15 @@ export const Route = createFileRoute("/api/chat")({
             headers: { "content-type": "application/json" },
           });
         }
-        const { chatId, requestId } = parsed.data;
+        const { chatId, requestId, cancel } = parsed.data;
+
+        if (cancel) {
+          activeRuns.get(requestId)?.abort();
+          return new Response(JSON.stringify({ ok: true }), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+
 
         const { db, audit } = await import("@/lib/db.server");
         const { buildModel } = await import("@/lib/ai.server");
