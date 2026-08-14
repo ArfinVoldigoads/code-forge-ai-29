@@ -27,6 +27,20 @@ const clip = (text: string) =>
 
 const SHOT_DIR = "/home/user/.agentkit";
 
+/** Strip a credential out of any command output before it reaches the model or UI. */
+const redact = (text: string, ...secrets: (string | null | undefined)[]) =>
+  secrets.reduce<string>(
+    (acc, s) => (s && s.length > 6 ? acc.split(s).join("***") : acc),
+    text,
+  );
+
+const ghHeaders = (token: string) => ({
+  authorization: `Bearer ${token}`,
+  accept: "application/vnd.github+json",
+  "user-agent": "agentkit",
+});
+
+
 export function buildAgentTools(ctx: Ctx) {
   let session: { sandbox: Sandbox; sessionId: string } | null = null;
   let lastMark = Date.now();
@@ -91,11 +105,17 @@ export function buildAgentTools(ctx: Ctx) {
   /** Shell helper that logs into the shared console feed and injects chat secrets. */
   const shell = async (
     command: string,
-    opts: { toolId?: string; timeoutMs?: number; stream?: boolean } = {},
+    opts: {
+      toolId?: string;
+      timeoutMs?: number;
+      stream?: boolean;
+      env?: Record<string, string>;
+    } = {},
   ) => {
     const started = Date.now();
     let active = await sandbox();
-    const envs = await getChatEnv(ctx.chatId);
+    const envs = { ...(await getChatEnv(ctx.chatId)), ...(opts.env ?? {}) };
+
     let stdout = "";
     let stderr = "";
     const emit = (streamName: "stdout" | "stderr", text: string) => {
@@ -568,6 +588,336 @@ export function buildAgentTools(ctx: Ctx) {
           return { url, text: await fetchUrlText(url) };
         }),
     }),
+
+    deep_research: tool({
+      description:
+        "Deep web research in one call: expands your question into several queries, searches them all, opens the best pages and returns numbered sources with excerpts. Use this instead of many web_search calls when you need to actually understand something (third-party APIs, unfamiliar errors, deployment docs). Always cite the returned URLs.",
+      inputSchema: z.object({
+        question: z.string().min(3),
+        depth: z.number().int().min(2).max(6).optional(),
+        maxPages: z.number().int().min(2).max(10).optional(),
+      }),
+      execute: async ({ question, depth, maxPages }) =>
+        run("deep_research", { question, depth: depth ?? 4 }, async () => {
+          const { deepResearch } = await import("@/lib/research.server");
+          const result = await deepResearch(question, {
+            ...(depth !== undefined ? { depth } : {}),
+            ...(maxPages !== undefined ? { maxPages } : {}),
+          });
+          return {
+            question: result.question,
+            queries: result.queries,
+            notes: result.notes,
+            sources: result.sources.map((s) => ({
+              ref: `[${s.index}] ${s.title} — ${s.url}`,
+              url: s.url,
+              snippet: s.snippet,
+              excerpt: s.excerpt ? clip(s.excerpt) : null,
+              ...(s.error ? { error: s.error } : {}),
+            })),
+          };
+        }),
+    }),
+
+    /* ---------------------------- integrations -------------------------- */
+
+    integration_status: tool({
+      description:
+        "Check which external accounts (GitHub, Vercel, Cloudflare) are connected in Settings → Integrations, and under which account. Call this before any push or deploy so you never have to ask the user which account to use.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        run("integration_status", {}, async () => {
+          const { readIntegration } = await import("@/lib/integrations.server");
+          const kinds = ["github", "vercel", "cloudflare"] as const;
+          const rows = await Promise.all(
+            kinds.map(async (kind) => {
+              const v = await readIntegration(kind);
+              return {
+                kind,
+                connected: Boolean(v.token),
+                account: v.account,
+                status: v.status,
+                ...(kind === "cloudflare" ? { accountId: v.extra } : {}),
+                ...(kind === "vercel" ? { teamId: v.extra } : {}),
+              };
+            }),
+          );
+          return { integrations: rows };
+        }),
+    }),
+
+    github_whoami: tool({
+      description: "Return the GitHub account behind the connected token (login, name, repo count).",
+      inputSchema: z.object({}),
+      execute: async () =>
+        run("github_whoami", {}, async () => {
+          const { requireIntegration } = await import("@/lib/integrations.server");
+          const { token } = await requireIntegration("github");
+          const res = await fetch("https://api.github.com/user", {
+            headers: ghHeaders(token!),
+            signal: AbortSignal.timeout(20_000),
+          });
+          if (!res.ok) throw new Error(`GitHub HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+          const j = (await res.json()) as { login: string; name?: string; public_repos?: number };
+          return { login: j.login, name: j.name ?? null, publicRepos: j.public_repos ?? null };
+        }),
+    }),
+
+    github_create_repo: tool({
+      description:
+        "Create a repository on the connected GitHub account (idempotent: returns the existing repo if the name is taken by this account).",
+      inputSchema: z.object({
+        name: z.string().min(1),
+        private: z.boolean().optional(),
+        description: z.string().optional(),
+      }),
+      execute: async ({ name, private: isPrivate, description }) =>
+        run("github_create_repo", { name, private: isPrivate ?? true }, async () => {
+          const { requireIntegration } = await import("@/lib/integrations.server");
+          const { token } = await requireIntegration("github");
+          const me = await fetch("https://api.github.com/user", {
+            headers: ghHeaders(token!),
+            signal: AbortSignal.timeout(20_000),
+          });
+          if (!me.ok) throw new Error(`GitHub HTTP ${me.status}`);
+          const login = ((await me.json()) as { login: string }).login;
+
+          const existing = await fetch(`https://api.github.com/repos/${login}/${name}`, {
+            headers: ghHeaders(token!),
+            signal: AbortSignal.timeout(20_000),
+          });
+          if (existing.ok) {
+            const j = (await existing.json()) as { full_name: string; html_url: string };
+            return { created: false, fullName: j.full_name, url: j.html_url, owner: login };
+          }
+
+          const res = await fetch("https://api.github.com/user/repos", {
+            method: "POST",
+            headers: { ...ghHeaders(token!), "content-type": "application/json" },
+            body: JSON.stringify({
+              name,
+              private: isPrivate ?? true,
+              description: description ?? "Created by agentkit",
+            }),
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (!res.ok) throw new Error(`GitHub HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+          const j = (await res.json()) as { full_name: string; html_url: string };
+          return { created: true, fullName: j.full_name, url: j.html_url, owner: login };
+        }),
+    }),
+
+    github_push: tool({
+      description:
+        "Commit everything in the project directory and push it to a GitHub repo using the connected token. Creates the repo first with github_create_repo if it does not exist. Credentials are never written to disk or printed.",
+      inputSchema: z.object({
+        repo: z.string().min(1).describe("owner/repo or just repo (defaults to the connected user)"),
+        branch: z.string().optional(),
+        message: z.string().optional(),
+      }),
+      execute: async ({ repo, branch, message }) =>
+        run("github_push", { repo, branch: branch ?? "main" }, async (toolId) => {
+          const { requireIntegration } = await import("@/lib/integrations.server");
+          const { token } = await requireIntegration("github");
+          const me = await fetch("https://api.github.com/user", {
+            headers: ghHeaders(token!),
+            signal: AbortSignal.timeout(20_000),
+          });
+          if (!me.ok) throw new Error(`GitHub HTTP ${me.status}`);
+          const login = ((await me.json()) as { login: string }).login;
+          const full = repo.includes("/") ? repo : `${login}/${repo}`;
+          const ref = branch || "main";
+          const commitMessage = (message || "chore: update from agentkit").replace(/'/g, "'\\''");
+
+          const script = [
+            `set -e`,
+            `git config --global --add safe.directory "$PWD" || true`,
+            `git init -q 2>/dev/null || true`,
+            `git config user.email "agent@agentkit.local"`,
+            `git config user.name "agentkit"`,
+            `git checkout -B ${ref} -q`,
+            `printf '%s\\n' 'node_modules' '.env' '.next' 'dist' '.vercel' > .gitignore.agentkit`,
+            `if [ ! -f .gitignore ]; then mv .gitignore.agentkit .gitignore; else rm -f .gitignore.agentkit; fi`,
+            `git add -A`,
+            `git commit -q -m '${commitMessage}' || echo "nothing to commit"`,
+            `git push --quiet --force "https://x-access-token:\${GITHUB_TOKEN}@github.com/${full}.git" ${ref} 2>&1 | sed -e "s#https://[^@]*@#https://#g"`,
+          ].join("\n");
+
+          const result = await shell(script, { toolId, stream: true, timeoutMs: 300_000, env: { GITHUB_TOKEN: token! } });
+          const out = redact(`${result.stdout}\n${result.stderr}`, token!);
+          if (result.exitCode !== 0) throw new Error(`git push failed (exit ${result.exitCode}): ${out.slice(-1500)}`);
+          return { repo: full, branch: ref, url: `https://github.com/${full}`, output: clip(out) };
+        }),
+    }),
+
+    vercel_whoami: tool({
+      description: "Return the Vercel account/team behind the connected token.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        run("vercel_whoami", {}, async () => {
+          const { requireIntegration } = await import("@/lib/integrations.server");
+          const { token, extra } = await requireIntegration("vercel");
+          const url = new URL("https://api.vercel.com/v2/user");
+          if (extra) url.searchParams.set("teamId", extra);
+          const res = await fetch(url, {
+            headers: { authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(20_000),
+          });
+          if (!res.ok) throw new Error(`Vercel HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+          const j = (await res.json()) as { user?: { username?: string; email?: string } };
+          return { username: j.user?.username ?? null, email: j.user?.email ?? null, teamId: extra };
+        }),
+    }),
+
+    vercel_list_projects: tool({
+      description: "List projects on the connected Vercel account/team.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        run("vercel_list_projects", {}, async () => {
+          const { requireIntegration } = await import("@/lib/integrations.server");
+          const { token, extra } = await requireIntegration("vercel");
+          const url = new URL("https://api.vercel.com/v9/projects");
+          url.searchParams.set("limit", "50");
+          if (extra) url.searchParams.set("teamId", extra);
+          const res = await fetch(url, {
+            headers: { authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(20_000),
+          });
+          if (!res.ok) throw new Error(`Vercel HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+          const j = (await res.json()) as { projects?: { name: string; framework?: string }[] };
+          return { projects: (j.projects ?? []).map((p) => ({ name: p.name, framework: p.framework ?? null })) };
+        }),
+    }),
+
+    vercel_deploy: tool({
+      description:
+        "Deploy the sandbox project to Vercel with the Vercel CLI and the connected token. Installs the CLI if needed and returns the deployment URL. Read the build output on failure, fix the cause, and call again.",
+      inputSchema: z.object({
+        projectName: z.string().min(1),
+        prod: z.boolean().optional(),
+        buildCommand: z.string().optional(),
+      }),
+      execute: async ({ projectName, prod, buildCommand }) =>
+        run("vercel_deploy", { projectName, prod: prod ?? true }, async (toolId) => {
+          const { requireIntegration } = await import("@/lib/integrations.server");
+          const { token, extra } = await requireIntegration("vercel");
+          const safeName = projectName.replace(/[^a-zA-Z0-9-_]/g, "-").toLowerCase();
+          const script = [
+            `set -e`,
+            `command -v vercel >/dev/null 2>&1 || npm i -g vercel@latest >/dev/null 2>&1`,
+            buildCommand ? buildCommand : `true`,
+            `vercel deploy --yes ${prod === false ? "" : "--prod"} --token "$VERCEL_TOKEN" ${extra ? `--scope "$VERCEL_ORG_ID"` : ""} --name ${safeName} 2>&1`,
+          ].join("\n");
+          const env: Record<string, string> = { VERCEL_TOKEN: token! };
+          if (extra) env["VERCEL_ORG_ID"] = extra;
+          const result = await shell(script, { toolId, stream: true, timeoutMs: 900_000, env });
+          const out = redact(`${result.stdout}\n${result.stderr}`, token!);
+          const url = /https:\/\/[a-z0-9-]+\.vercel\.app/gi.exec(out)?.[0] ?? null;
+          if (result.exitCode !== 0) {
+            throw new Error(`vercel deploy failed (exit ${result.exitCode}): ${out.slice(-2000)}`);
+          }
+          return { project: safeName, url, output: clip(out) };
+        }),
+    }),
+
+    cloudflare_whoami: tool({
+      description: "Verify the Cloudflare token and return the connected account.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        run("cloudflare_whoami", {}, async () => {
+          const { requireIntegration } = await import("@/lib/integrations.server");
+          const { token, extra } = await requireIntegration("cloudflare");
+          const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${extra}`, {
+            headers: { authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(20_000),
+          });
+          const j = (await res.json().catch(() => ({}))) as { result?: { name?: string }; success?: boolean };
+          if (!res.ok || !j.success) throw new Error(`Cloudflare HTTP ${res.status}`);
+          return { accountId: extra, accountName: j.result?.name ?? null };
+        }),
+    }),
+
+    cloudflare_list_workers: tool({
+      description: "List Workers scripts on the connected Cloudflare account.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        run("cloudflare_list_workers", {}, async () => {
+          const { requireIntegration } = await import("@/lib/integrations.server");
+          const { token, extra } = await requireIntegration("cloudflare");
+          const res = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${extra}/workers/scripts`,
+            { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) },
+          );
+          const j = (await res.json().catch(() => ({}))) as {
+            result?: { id: string; modified_on?: string }[];
+            success?: boolean;
+          };
+          if (!res.ok || !j.success) throw new Error(`Cloudflare HTTP ${res.status}`);
+          return { workers: (j.result ?? []).map((w) => ({ name: w.id, modifiedOn: w.modified_on ?? null })) };
+        }),
+    }),
+
+    cloudflare_deploy_worker: tool({
+      description:
+        "Deploy the project to Cloudflare Workers with wrangler using the connected token. Creates a minimal wrangler.toml when the project has none, installs wrangler if missing, and returns the workers.dev URL.",
+      inputSchema: z.object({
+        name: z.string().min(1),
+        entry: z.string().optional().describe("entry file, e.g. src/index.ts"),
+        buildCommand: z.string().optional(),
+      }),
+      execute: async ({ name, entry, buildCommand }) =>
+        run("cloudflare_deploy_worker", { name, entry: entry ?? null }, async (toolId) => {
+          const { requireIntegration } = await import("@/lib/integrations.server");
+          const { token, extra } = await requireIntegration("cloudflare");
+          const safeName = name.replace(/[^a-zA-Z0-9-]/g, "-").toLowerCase();
+          const main = entry || "src/index.ts";
+          const script = [
+            `set -e`,
+            `command -v wrangler >/dev/null 2>&1 || npm i -g wrangler@latest >/dev/null 2>&1`,
+            buildCommand ? buildCommand : `true`,
+            `if [ ! -f wrangler.toml ] && [ ! -f wrangler.jsonc ] && [ ! -f wrangler.json ]; then`,
+            `  mkdir -p "$(dirname ${main})"`,
+            `  if [ ! -f ${main} ]; then printf '%s\\n' 'export default { async fetch() { return new Response("Hello from agentkit"); } };' > ${main}; fi`,
+            `  printf '%s\\n' 'name = "${safeName}"' 'main = "${main}"' 'compatibility_date = "2026-01-01"' > wrangler.toml`,
+            `fi`,
+            `wrangler deploy 2>&1`,
+          ].join("\n");
+          const result = await shell(script, {
+            toolId,
+            stream: true,
+            timeoutMs: 900_000,
+            env: { CLOUDFLARE_API_TOKEN: token!, CLOUDFLARE_ACCOUNT_ID: extra ?? "" },
+          });
+          const out = redact(`${result.stdout}\n${result.stderr}`, token!);
+          const url = /https:\/\/[a-z0-9.-]+\.workers\.dev/gi.exec(out)?.[0] ?? null;
+          if (result.exitCode !== 0) {
+            throw new Error(`wrangler deploy failed (exit ${result.exitCode}): ${out.slice(-2000)}`);
+          }
+          return { worker: safeName, url, output: clip(out) };
+        }),
+    }),
+
+    cloudflare_tail: tool({
+      description: "Fetch recent wrangler logs for a deployed Worker to debug runtime errors.",
+      inputSchema: z.object({ name: z.string().min(1), seconds: z.number().int().min(5).max(60).optional() }),
+      execute: async ({ name, seconds }) =>
+        run("cloudflare_tail", { name }, async (toolId) => {
+          const { requireIntegration } = await import("@/lib/integrations.server");
+          const { token, extra } = await requireIntegration("cloudflare");
+          const result = await shell(
+            `command -v wrangler >/dev/null 2>&1 || npm i -g wrangler@latest >/dev/null 2>&1\ntimeout ${seconds ?? 20} wrangler tail ${name} --format pretty 2>&1 || true`,
+            {
+              toolId,
+              stream: true,
+              timeoutMs: 120_000,
+              env: { CLOUDFLARE_API_TOKEN: token!, CLOUDFLARE_ACCOUNT_ID: extra ?? "" },
+            },
+          );
+          return { logs: clip(redact(`${result.stdout}\n${result.stderr}`, token!)) };
+        }),
+    }),
+
+
 
     /* ------------------------------ secrets ----------------------------- */
 

@@ -58,14 +58,71 @@ async function duckDuckGoSearch(query: string, maxResults: number): Promise<Sear
       snippet: snippetMatch?.[1] ? decode(snippetMatch[1]).slice(0, 600) : "",
     });
   }
-  if (!hits.length) throw new Error("No results from the keyless search fallback.");
+  if (!hits.length) throw new Error("No results from the DuckDuckGo fallback.");
   return hits;
+}
+
+/** Second keyless engine, used when DuckDuckGo returns nothing or blocks us. */
+async function bingSearch(query: string, maxResults: number): Promise<SearchHit[]> {
+  const url = new URL("https://www.bing.com/search");
+  url.searchParams.set("q", query);
+  url.searchParams.set("count", String(maxResults));
+  const res = await fetch(url, {
+    headers: {
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36",
+      "accept-language": "en-US,en;q=0.9",
+    },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`Bing HTTP ${res.status}`);
+  const html = await res.text();
+  const hits: SearchHit[] = [];
+  const re = /<li class="b_algo"[\s\S]*?<h2>\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<p[^>]*>([\s\S]*?)<\/p>)?<\/li>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && hits.length < maxResults) {
+    const url2 = m[1] ?? "";
+    if (!url2.startsWith("http")) continue;
+    hits.push({ title: decode(m[2] ?? ""), url: url2, snippet: decode(m[3] ?? "").slice(0, 600) });
+  }
+  if (!hits.length) throw new Error("No results from the Bing fallback.");
+  return hits;
+}
+
+/** Keyless search chain so research never dies just because no API key is set. */
+async function keylessSearch(query: string, maxResults: number): Promise<SearchHit[]> {
+  const errors: string[] = [];
+  for (const engine of [duckDuckGoSearch, bingSearch]) {
+    try {
+      const hits = await engine(query, maxResults);
+      if (hits.length) return hits;
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+  throw new Error(`Keyless search failed: ${errors.join(" | ")}`);
 }
 
 /** Web search through the configured provider. Never fabricates results. */
 export async function webSearch(query: string, maxResults = 6): Promise<SearchHit[]> {
   const { provider, apiKey } = await getSearchSettings();
-  if (!apiKey) return duckDuckGoSearch(query, maxResults);
+  if (!apiKey) return keylessSearch(query, maxResults);
+  try {
+    return await providerSearch(provider, apiKey, query, maxResults);
+  } catch {
+    // A broken/expired key must never block research.
+    return keylessSearch(query, maxResults);
+  }
+}
+
+async function providerSearch(
+  provider: SearchSettings["provider"],
+  apiKey: string,
+  query: string,
+  maxResults: number,
+): Promise<SearchHit[]> {
+
+
 
 
   if (provider === "tavily") {
@@ -125,13 +182,37 @@ export async function webSearch(query: string, maxResults = 6): Promise<SearchHi
   }));
 }
 
+/** Reader-proxy fallback for pages that block plain fetches or need rendering. */
+async function readerFallback(url: string, maxChars: number): Promise<string> {
+  const res = await fetch(`https://r.jina.ai/${url}`, {
+    headers: { "user-agent": "Mozilla/5.0 (compatible; agentkit/1.0)" },
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!res.ok) throw new Error(`Reader proxy HTTP ${res.status} for ${url}`);
+  return (await res.text()).slice(0, maxChars);
+}
+
 /** Fetch a page and reduce it to readable text. */
 export async function fetchUrlText(url: string, maxChars = 8000): Promise<string> {
-  const res = await fetch(url, {
-    headers: { "user-agent": "Mozilla/5.0 (compatible; agentkit/1.0)" },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36",
+        accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (e) {
+    return readerFallback(url, maxChars).catch(() => {
+      throw e instanceof Error ? e : new Error(String(e));
+    });
+  }
+  if (!res.ok) return readerFallback(url, maxChars);
+
   const type = res.headers.get("content-type") ?? "";
   const body = await res.text();
   if (!type.includes("html")) return body.slice(0, maxChars);

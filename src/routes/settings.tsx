@@ -8,7 +8,9 @@ const TABS = [
   { to: "/settings/models", label: "Models" },
   { to: "/settings/skills", label: "Skills" },
   { to: "/settings/search", label: "Search" },
+  { to: "/settings/integrations", label: "Integrations" },
   { to: "/settings/e2b", label: "E2B" },
+
 ] as const;
 
 

@@ -15,6 +15,7 @@ import { Route as UnlockRouteImport } from './routes/unlock'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ChatChatIdRouteImport } from './routes/chat.$chatId'
 import { Route as SettingsE2bRouteImport } from './routes/settings.e2b'
+import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsSearchRouteImport } from './routes/settings.search'
@@ -50,6 +51,11 @@ const SettingsE2bRoute = SettingsE2bRouteImport.update({
   path: '/e2b',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsModelsRoute = SettingsModelsRouteImport.update({
   id: '/models',
   path: '/models',
@@ -78,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/api/chat': typeof ApiChatRoute
   '/chat/$chatId': typeof ChatChatIdRoute
   '/settings/e2b': typeof SettingsE2bRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/search': typeof SettingsSearchRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/api/chat': typeof ApiChatRoute
   '/chat/$chatId': typeof ChatChatIdRoute
   '/settings/e2b': typeof SettingsE2bRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/search': typeof SettingsSearchRoute
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/api/chat': typeof ApiChatRoute
   '/chat/$chatId': typeof ChatChatIdRoute
   '/settings/e2b': typeof SettingsE2bRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/search': typeof SettingsSearchRoute
@@ -117,6 +126,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/chat/$chatId'
     | '/settings/e2b'
+    | '/settings/integrations'
     | '/settings/models'
     | '/settings/providers'
     | '/settings/search'
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/chat/$chatId'
     | '/settings/e2b'
+    | '/settings/integrations'
     | '/settings/models'
     | '/settings/providers'
     | '/settings/search'
@@ -141,6 +152,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/chat/$chatId'
     | '/settings/e2b'
+    | '/settings/integrations'
     | '/settings/models'
     | '/settings/providers'
     | '/settings/search'
@@ -199,6 +211,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsE2bRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/integrations': {
+      id: '/settings/integrations'
+      path: '/integrations'
+      fullPath: '/settings/integrations'
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/models': {
       id: '/settings/models'
       path: '/models'
@@ -232,6 +251,7 @@ declare module '@tanstack/react-router' {
 
 interface SettingsRouteChildren {
   SettingsE2bRoute: typeof SettingsE2bRoute
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
   SettingsSearchRoute: typeof SettingsSearchRoute
@@ -240,6 +260,7 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsE2bRoute: SettingsE2bRoute,
+  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsModelsRoute: SettingsModelsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
   SettingsSearchRoute: SettingsSearchRoute,
