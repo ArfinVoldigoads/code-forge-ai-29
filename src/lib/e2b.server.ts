@@ -3,6 +3,8 @@ import { db } from "@/lib/db.server";
 
 const TEMPLATE = "base";
 const WORKDIR = "/home/user/project";
+// Refreshable one-hour lease: an open workspace should not expire after five minutes.
+const SANDBOX_LEASE_MS = 60 * 60 * 1000;
 
 export async function getE2BKey(): Promise<string | null> {
   const { data } = await db.from("app_settings").select("value").eq("key", "e2b").maybeSingle();
@@ -41,7 +43,7 @@ export async function getSandboxForChat(chatId: string, apiKey: string): Promise
   if (existing) {
     try {
       const sandbox = await Sandbox.connect(existing.sandbox_id, { apiKey });
-      await sandbox.setTimeout(300_000);
+      await sandbox.setTimeout(SANDBOX_LEASE_MS);
       await assertHealthyShell(sandbox);
       await db
         .from("sandbox_sessions")
@@ -53,7 +55,7 @@ export async function getSandboxForChat(chatId: string, apiKey: string): Promise
     }
   }
 
-  const sandbox = await Sandbox.create(TEMPLATE, { apiKey, timeoutMs: 300_000 });
+  const sandbox = await Sandbox.create(TEMPLATE, { apiKey, timeoutMs: SANDBOX_LEASE_MS });
   await sandbox.commands.run(`mkdir -p ${WORKDIR}`);
   await assertHealthyShell(sandbox);
   const { data: created } = await db
