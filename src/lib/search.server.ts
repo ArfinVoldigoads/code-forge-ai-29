@@ -182,13 +182,37 @@ async function providerSearch(
   }));
 }
 
+/** Reader-proxy fallback for pages that block plain fetches or need rendering. */
+async function readerFallback(url: string, maxChars: number): Promise<string> {
+  const res = await fetch(`https://r.jina.ai/${url}`, {
+    headers: { "user-agent": "Mozilla/5.0 (compatible; agentkit/1.0)" },
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!res.ok) throw new Error(`Reader proxy HTTP ${res.status} for ${url}`);
+  return (await res.text()).slice(0, maxChars);
+}
+
 /** Fetch a page and reduce it to readable text. */
 export async function fetchUrlText(url: string, maxChars = 8000): Promise<string> {
-  const res = await fetch(url, {
-    headers: { "user-agent": "Mozilla/5.0 (compatible; agentkit/1.0)" },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36",
+        accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (e) {
+    return readerFallback(url, maxChars).catch(() => {
+      throw e instanceof Error ? e : new Error(String(e));
+    });
+  }
+  if (!res.ok) return readerFallback(url, maxChars);
+
   const type = res.headers.get("content-type") ?? "";
   const body = await res.text();
   if (!type.includes("html")) return body.slice(0, maxChars);
