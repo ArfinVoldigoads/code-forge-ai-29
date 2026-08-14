@@ -47,15 +47,15 @@ async function duckDuckGoSearch(query: string, maxResults: number): Promise<Sear
     /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>([\s\S]*?)(?=<a[^>]+class="[^"]*result__a|<\/body>)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html)) && hits.length < maxResults) {
-    let url = m[1];
+    let url = m[1] ?? "";
     const redirect = /uddg=([^&]+)/.exec(url);
-    if (redirect) url = decodeURIComponent(redirect[1]);
+    if (redirect?.[1]) url = decodeURIComponent(redirect[1]);
     if (!url.startsWith("http")) continue;
-    const snippetMatch = /class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/.exec(m[3]);
+    const snippetMatch = /class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/.exec(m[3] ?? "");
     hits.push({
-      title: decode(m[2]),
+      title: decode(m[2] ?? ""),
       url,
-      snippet: snippetMatch ? decode(snippetMatch[1]).slice(0, 600) : "",
+      snippet: snippetMatch?.[1] ? decode(snippetMatch[1]).slice(0, 600) : "",
     });
   }
   if (!hits.length) throw new Error("No results from the keyless search fallback.");
