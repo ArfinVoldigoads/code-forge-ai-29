@@ -56,11 +56,18 @@ function SecretForm({
         });
       }
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, _vars) => {
+      const savedNames = keys
+        .map((k) => k.name)
+        .filter((n) => (values[n] ?? "").trim().length > 0);
       setSaved(true);
       setValues({});
-      toast.success("Secrets saved — tell the agent to continue.");
+      toast.success("Secrets saved — resuming the agent…");
       await queryClient.invalidateQueries({ queryKey: ["secrets", chatId] });
+      // Resume the run automatically instead of waiting for the user to type.
+      window.dispatchEvent(
+        new CustomEvent("agentkit:secrets-saved", { detail: { chatId, names: savedNames } }),
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
