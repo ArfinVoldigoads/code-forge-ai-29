@@ -35,7 +35,10 @@ export function ChatView({ chatId }: { chatId: string }) {
   const refresh = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ["chat", chatId] });
     await queryClient.invalidateQueries({ queryKey: ["chats"] });
+    await queryClient.invalidateQueries({ queryKey: ["sandbox-dir", chatId] });
+    await queryClient.invalidateQueries({ queryKey: ["sandbox-status", chatId] });
   }, [queryClient, chatId]);
+
 
   const { live, streaming, start, stop } = useChatStream(refresh);
 
