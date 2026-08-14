@@ -313,7 +313,7 @@ ${skillBlock || "(none enabled)"}`;
                 model: buildModel(provider, modelRow.model_id),
                 system: systemPrompt,
                 messages,
-                abortSignal: request.signal,
+                abortSignal: runAbort.signal,
                 ...(tools ? { tools, stopWhen: stepCountIs(120) } : {}),
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
               } as any;
