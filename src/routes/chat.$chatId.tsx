@@ -85,8 +85,7 @@ function ChatPage() {
       </div>
     </WorkspaceShell>
   );
+}
 
-    </WorkspaceShell>
-  );
 
 }
