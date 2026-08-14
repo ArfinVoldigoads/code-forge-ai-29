@@ -57,4 +57,33 @@ export function resolvePath(path: string): string {
   return path.startsWith("/home/") ? path : `${WORKDIR}/${clean}`;
 }
 
+const EXTRA_PATHS = [
+  "/usr/local/sbin",
+  "/usr/local/bin",
+  "/usr/sbin",
+  "/usr/bin",
+  "/sbin",
+  "/bin",
+  "/home/user/.bun/bin",
+  "/home/user/.local/bin",
+  "/home/user/.npm-global/bin",
+  "/usr/local/node/bin",
+  "/usr/lib/node_modules/.bin",
+].join(":");
+
+/**
+ * Wrap a command in a login shell with a sane PATH so tools installed via
+ * nvm/bun/pip resolve. Without this, non-interactive runs exit with 127.
+ */
+export function shellCommand(command: string): string {
+  const script = [
+    `export PATH="${EXTRA_PATHS}:$PATH"`,
+    `[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1`,
+    `for d in $HOME/.nvm/versions/node/*/bin; do [ -d "$d" ] && export PATH="$d:$PATH"; done`,
+    `mkdir -p ${WORKDIR}`,
+    command,
+  ].join("\n");
+  return `bash -lc ${JSON.stringify(script)}`;
+}
+
 export { WORKDIR };

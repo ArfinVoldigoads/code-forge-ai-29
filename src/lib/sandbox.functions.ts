@@ -96,13 +96,21 @@ export const runCli = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const started = Date.now();
     const { sandbox, sessionId } = await session(data.chatId);
-    const { resolvePath, WORKDIR } = await import("./e2b.server");
+    const { resolvePath, WORKDIR, shellCommand } = await import("./e2b.server");
     const { db } = await import("./db.server");
     const cwd = data.cwd ? resolvePath(data.cwd) : WORKDIR;
     const clip = (t: string) => (t.length > 20000 ? `${t.slice(0, 20000)}\n…truncated` : t);
     try {
-      const result = await sandbox.commands.run(data.command, { cwd, timeoutMs: 180_000 });
-      const out = { exitCode: result.exitCode, stdout: clip(result.stdout), stderr: clip(result.stderr) };
+      const result = await sandbox.commands.run(shellCommand(data.command), { cwd, timeoutMs: 180_000 });
+      const hint =
+        result.exitCode === 127
+          ? "\ncommand not found (exit 127) — install it first, e.g. `npm i -g <tool>` or `apt-get install -y <pkg>`."
+          : "";
+      const out = {
+        exitCode: result.exitCode,
+        stdout: clip(result.stdout),
+        stderr: clip(result.stderr + hint),
+      };
       await db.from("command_outputs").insert({
         sandbox_session_id: sessionId || null,
         command: data.command,
@@ -123,14 +131,14 @@ export const startPreview = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { sandbox } = await session(data.chatId);
-    const { WORKDIR } = await import("./e2b.server");
+    const { WORKDIR, shellCommand } = await import("./e2b.server");
     const port = data.port;
     const existing = await sandbox.commands.run(
-      `curl -fsS --max-time 2 http://127.0.0.1:${port} >/dev/null`,
+      shellCommand(`curl -fsS --max-time 2 http://127.0.0.1:${port} >/dev/null`),
       { cwd: WORKDIR, timeoutMs: 5_000 },
     );
     if (existing.exitCode === 0) return { url: `https://${sandbox.getHost(port)}`, port };
     const command = `if [ -f package.json ]; then\n  if [ -f bun.lockb ] || [ -f bun.lock ]; then bun run dev -- --host 0.0.0.0 --port ${port};\n  elif [ -f pnpm-lock.yaml ]; then pnpm dev -- --host 0.0.0.0 --port ${port};\n  else npm run dev -- --host 0.0.0.0 --port ${port}; fi\nelif [ -f index.html ]; then python3 -m http.server ${port} --bind 0.0.0.0;\nelse echo 'No web project found. Ask the agent to create one first.' >&2; exit 1; fi`;
-    await sandbox.commands.run(command, { cwd: WORKDIR, background: true });
+    await sandbox.commands.run(shellCommand(command), { cwd: WORKDIR, background: true });
     return { url: `https://${sandbox.getHost(port)}`, port };
   });
