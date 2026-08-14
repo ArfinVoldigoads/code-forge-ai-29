@@ -30,9 +30,22 @@ export const Route = createFileRoute("/chat/$chatId")({
   component: ChatPage,
 });
 
+function useIsWide() {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => setWide(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return wide;
+}
+
 function ChatPage() {
   const { chatId } = Route.useParams();
   const [showPanel, setShowPanel] = useState(false);
+  const wide = useIsWide();
 
   return (
     <WorkspaceShell>
@@ -55,19 +68,24 @@ function ChatPage() {
           )}
         </Button>
 
-        {showPanel && (
-          <aside className="hidden w-[26rem] shrink-0 flex-col border-l border-border lg:flex">
+        {wide && showPanel && (
+          <aside className="flex w-[26rem] shrink-0 flex-col border-l border-border">
             <SandboxPanel chatId={chatId} />
           </aside>
         )}
 
-        <Sheet open={showPanel} onOpenChange={setShowPanel}>
-          <SheetContent side="right" className="flex w-full max-w-full flex-col p-0 lg:hidden">
-            <SheetTitle className="sr-only">Sandbox</SheetTitle>
-            <SandboxPanel chatId={chatId} />
-          </SheetContent>
-        </Sheet>
+        {!wide && (
+          <Sheet open={showPanel} onOpenChange={setShowPanel}>
+            <SheetContent side="right" className="flex w-full max-w-full flex-col p-0">
+              <SheetTitle className="sr-only">Sandbox</SheetTitle>
+              <SandboxPanel chatId={chatId} />
+            </SheetContent>
+          </Sheet>
+        )}
       </div>
+    </WorkspaceShell>
+  );
+
     </WorkspaceShell>
   );
 
