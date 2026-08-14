@@ -16,6 +16,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SecretsTab } from "@/components/workspace/secrets-tab";
+
 import { Textarea } from "@/components/ui/textarea";
 import {
   consoleFeed,
@@ -105,10 +107,11 @@ export function SandboxPanel({ chatId }: { chatId: string }) {
       )}
 
       <Tabs defaultValue="preview" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="mx-3 mt-2 grid w-auto grid-cols-3">
+        <TabsList className="mx-3 mt-2 grid w-auto grid-cols-4">
           <TabsTrigger value="console">Console</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
           <TabsTrigger value="preview">Preview</TabsTrigger>
+          <TabsTrigger value="secrets">Secrets</TabsTrigger>
         </TabsList>
         <TabsContent value="console" className="min-h-0 flex-1">
           <ConsoleTab chatId={chatId} />
@@ -119,7 +122,11 @@ export function SandboxPanel({ chatId }: { chatId: string }) {
         <TabsContent value="preview" className="min-h-0 flex-1">
           <PreviewTab chatId={chatId} />
         </TabsContent>
+        <TabsContent value="secrets" className="min-h-0 flex-1">
+          <SecretsTab chatId={chatId} />
+        </TabsContent>
       </Tabs>
+
     </div>
   );
 }

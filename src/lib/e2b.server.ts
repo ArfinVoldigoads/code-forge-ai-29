@@ -95,12 +95,19 @@ export type ShellResult = { exitCode: number; stdout: string; stderr: string };
 export async function runShell(
   sandbox: Sandbox,
   command: string,
-  opts: { cwd?: string; timeoutMs?: number; onStdout?: (t: string) => void; onStderr?: (t: string) => void } = {},
+  opts: {
+    cwd?: string;
+    timeoutMs?: number;
+    envs?: Record<string, string>;
+    onStdout?: (t: string) => void;
+    onStderr?: (t: string) => void;
+  } = {},
 ): Promise<ShellResult> {
   try {
     const result = await sandbox.commands.run(shellCommand(command), {
       cwd: opts.cwd ?? WORKDIR,
       timeoutMs: opts.timeoutMs ?? 180_000,
+      ...(opts.envs ? { envs: opts.envs } : {}),
       ...(opts.onStdout ? { onStdout: opts.onStdout } : {}),
       ...(opts.onStderr ? { onStderr: opts.onStderr } : {}),
     });
@@ -114,4 +121,31 @@ export async function runShell(
   }
 }
 
+/** Secrets the user filled in for this chat, ready to inject as env vars. */
+export async function getChatEnv(chatId: string): Promise<Record<string, string>> {
+  const { data } = await db
+    .from("project_secrets")
+    .select("name, value")
+    .eq("chat_id", chatId)
+    .eq("status", "set");
+  const env: Record<string, string> = {};
+  for (const row of data ?? []) {
+    const name = (row as { name: string }).name;
+    const value = (row as { value: string | null }).value;
+    if (name && value) env[name] = value;
+  }
+  return env;
+}
+
+/** Mirror the chat secrets into the project's .env so tooling picks them up. */
+export async function syncEnvFile(sandbox: Sandbox, chatId: string): Promise<string[]> {
+  const env = await getChatEnv(chatId);
+  const names = Object.keys(env);
+  if (names.length === 0) return names;
+  const body = names.map((k) => `${k}=${env[k]}`).join("\n");
+  await sandbox.files.write(`${WORKDIR}/.env`, `${body}\n`);
+  return names;
+}
+
 export { WORKDIR };
+

@@ -1,12 +1,12 @@
-import { ToolActivity } from "@/components/workspace/tool-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Brain, ListChecks, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Composer } from "./composer";
 import { CollapsiblePanel, MessageItem } from "./message-item";
-import { Markdown } from "./markdown";
+import { Timeline } from "./timeline";
 import { useChatStream } from "@/hooks/use-chat-stream";
+
 import { listModels } from "@/lib/settings.functions";
 import {
   editUserMessage,
@@ -132,6 +132,7 @@ export function ChatView({ chatId }: { chatId: string }) {
             <MessageItem
               key={message.id}
               message={message}
+              chatId={chatId}
               onEdit={edit}
               onRetry={retry}
               busy={streaming}
@@ -152,18 +153,16 @@ export function ChatView({ chatId }: { chatId: string }) {
                 text={live.thinking}
                 defaultOpen
               />
-              <ToolActivity tools={live.tools} />
-              {live.answer ? (
-                <Markdown text={live.answer} />
-              ) : (
+              <Timeline blocks={live.timeline} chatId={chatId} />
+              {live.timeline.length === 0 && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />{" "}
                   {live.phase === "acting" ? "Working in the sandbox…" : "Working…"}
                 </div>
               )}
-
             </div>
           )}
+
 
           {live.error && (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">

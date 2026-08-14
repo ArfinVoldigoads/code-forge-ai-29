@@ -1,11 +1,13 @@
 import { useCallback, useRef, useState } from "react";
-import type { StreamEvent, ToolEventState } from "@/lib/types";
+import { applyTimelineEvent } from "@/lib/timeline";
+import type { StreamEvent, TimelineBlock, ToolEventState } from "@/lib/types";
 
 export type LiveState = {
   planning: string;
   thinking: string;
   answer: string;
   tools: ToolEventState[];
+  timeline: TimelineBlock[];
   phase: "idle" | "planning" | "thinking" | "answering" | "acting";
   error: string | null;
   cancelled: boolean;
@@ -16,10 +18,12 @@ const EMPTY: LiveState = {
   thinking: "",
   answer: "",
   tools: [],
+  timeline: [],
   phase: "idle",
   error: null,
   cancelled: false,
 };
+
 
 
 export function useChatStream(onFinish: () => void | Promise<void>) {
@@ -99,8 +103,10 @@ export function useChatStream(onFinish: () => void | Promise<void>) {
   return { live, streaming, start, stop, reset };
 }
 
-function applyEvent(prev: LiveState, event: StreamEvent): LiveState {
+function applyEvent(prevState: LiveState, event: StreamEvent): LiveState {
+  const prev: LiveState = { ...prevState, timeline: applyTimelineEvent(prevState.timeline, event) };
   switch (event.type) {
+
     case "planning-start":
       return { ...prev, phase: "planning" };
     case "planning-update":

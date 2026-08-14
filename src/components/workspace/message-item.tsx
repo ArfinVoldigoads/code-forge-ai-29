@@ -1,4 +1,3 @@
-import { ToolActivity, toolsFromEvents } from "@/components/workspace/tool-activity";
 import { useState } from "react";
 import {
   AlertTriangle,
@@ -15,8 +14,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Markdown } from "./markdown";
+import { Timeline } from "./timeline";
+import { buildTimeline, timelineHasContent } from "@/lib/timeline";
 import type { MessageDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
 
 export function CollapsiblePanel({
   title,
@@ -64,17 +66,21 @@ export function CollapsiblePanel({
 
 export function MessageItem({
   message,
+  chatId,
   onEdit,
   onRetry,
   busy,
 }: {
   message: MessageDTO;
+  chatId: string;
   onEdit: (id: string, content: string) => void;
   onRetry: (id: string) => void;
   busy: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
+  const timeline = buildTimeline(message.events);
+
 
   if (message.role === "user") {
     return (
@@ -144,9 +150,7 @@ export function MessageItem({
         text={message.thinking ?? ""}
       />
 
-      <ToolActivity tools={toolsFromEvents(message.events)} />
-
-
+      <Timeline blocks={timeline} chatId={chatId} />
 
       {message.error && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -155,7 +159,8 @@ export function MessageItem({
         </div>
       )}
 
-      {message.content && <Markdown text={message.content} />}
+      {!timelineHasContent(timeline) && message.content && <Markdown text={message.content} />}
+
 
       <div className="flex flex-wrap items-center gap-1 pt-1">
         {message.modelRef && (
