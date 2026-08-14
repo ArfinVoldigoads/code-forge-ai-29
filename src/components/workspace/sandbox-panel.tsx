@@ -27,6 +27,8 @@ import {
   sandboxStatus,
   startPreview,
   startSandbox,
+  heartbeatSandbox,
+
   writeSandboxFile,
 } from "@/lib/sandbox.functions";
 
@@ -79,6 +81,19 @@ export function SandboxPanel({ chatId }: { chatId: string }) {
     autoBooted.current = true;
     boot.mutate();
   }, [status.data, boot]);
+
+  // Refresh the sandbox lease while the workspace stays open, so it does not
+  // expire in the middle of a session.
+  useEffect(() => {
+    const ping = () => {
+      void heartbeatSandbox({ data: { chatId } }).catch(() => undefined);
+    };
+    ping();
+    const id = window.setInterval(ping, 60_000);
+    return () => window.clearInterval(id);
+  }, [chatId]);
+
+
 
 
   return (

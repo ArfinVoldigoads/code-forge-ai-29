@@ -49,9 +49,18 @@ export function buildAgentTools(ctx: Ctx) {
     if (!session) {
       session = await getSandboxForChat(ctx.chatId, ctx.apiKey);
       await syncEnvFile(session.sandbox, ctx.chatId).catch(() => []);
+      return session;
+    }
+    // Refresh the lease on every tool call so a long run never expires mid-task.
+    try {
+      await session.sandbox.setTimeout(60 * 60 * 1000);
+    } catch {
+      session = await getSandboxForChat(ctx.chatId, ctx.apiKey);
+      await syncEnvFile(session.sandbox, ctx.chatId).catch(() => []);
     }
     return session;
   };
+
 
 
   const logExecution = async (
