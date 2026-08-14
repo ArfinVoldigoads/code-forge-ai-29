@@ -38,10 +38,10 @@ const META: Record<
   cloudflare: {
     title: "Cloudflare",
     blurb:
-      "dash.cloudflare.com → My Profile → API Tokens → Create Token → template \"Edit Cloudflare Workers\" (permissions: Account · Workers Scripts · Edit, and Account · Account Settings · Read). Account ID: Workers & Pages → Overview, right sidebar (32 hex chars). A Global API Key will NOT work here.",
+      "API Token: dash.cloudflare.com → My Profile → API Tokens → Create Token → template \"Edit Cloudflare Workers\" (permissions: Account · Workers Scripts · Edit, and Account · Account Settings · Read). Account ID: lihat URL dashboard kamu — bagian setelah dash.cloudflare.com/, contoh https://dash.cloudflare.com/8f1c…/workers. Copy 32 karakter hex itu. Global API Key tidak bisa dipakai.",
     tokenLabel: "API Token",
     extraLabel: "Account ID",
-    extraHint: "e.g. 8f1c…  (32 hex characters)",
+    extraHint: "dari URL: dash.cloudflare.com/<INI>/workers",
   },
 };
 
