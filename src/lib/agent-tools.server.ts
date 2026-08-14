@@ -303,7 +303,7 @@ export function buildAgentTools(ctx: Ctx) {
 
     start_dev_server: tool({
       description:
-        "Start the project's dev server in the background on 0.0.0.0 and return the public preview URL.",
+        "Start the project's dev server as a managed background process on 0.0.0.0 and return the public preview URL. Always use this instead of appending '&' to run_command.",
       inputSchema: z.object({ port: z.number().int().min(1024).max(65535).optional() }),
       execute: async ({ port }) =>
         run("start_dev_server", { port: port ?? 5173 }, async () => {
@@ -321,7 +321,13 @@ export function buildAgentTools(ctx: Ctx) {
               background: true,
               ...(Object.keys(envs).length ? { envs } : {}),
             });
-            await new Promise((r) => setTimeout(r, 4000));
+            const ready = await shell(
+              `for i in $(seq 1 20); do curl -fsS --max-time 2 http://127.0.0.1:${p} >/dev/null && exit 0; sleep 1; done; exit 1`,
+              { timeoutMs: 30_000 },
+            );
+            if (ready.exitCode !== 0) {
+              throw new Error(`Dev server did not become ready on port ${p}. Inspect its console output, fix the startup error, and retry.`);
+            }
           }
           return { url: `https://${sbx.getHost(p)}`, port: p, alreadyRunning: alive.exitCode === 0 };
         }),
@@ -357,6 +363,14 @@ export function buildAgentTools(ctx: Ctx) {
           const { sandbox: sbx } = await sandbox();
           await sbx.setTimeout(900_000).catch(() => undefined);
 
+          const preview = await shell(
+            `curl -fsS --max-time 5 ${JSON.stringify(target)} >/dev/null`,
+            { timeoutMs: 10_000 },
+          );
+          if (preview.exitCode !== 0) {
+            throw new Error(`Cannot take a screenshot because no preview is responding at ${target}. Call start_dev_server first and use the same port.`);
+          }
+
           const install = await shell(
             `mkdir -p ${SHOT_DIR} && cd ${SHOT_DIR} && if [ ! -d node_modules/playwright ]; then npm init -y >/dev/null 2>&1; npm i playwright@1.49.1 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1; fi && echo ready`,
             { toolId, stream: true, timeoutMs: 300_000 },
@@ -367,14 +381,14 @@ export function buildAgentTools(ctx: Ctx) {
 
           const script = `const { chromium } = require('playwright');
 (async () => {
-  const browser = await chromium.launch({ args: ['--no-sandbox'] });
+  const browser = await chromium.launch({ args: ['--no-sandbox'], timeout: 20000 });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
   let status = 0;
   try {
-    const res = await page.goto(${JSON.stringify(target)}, { waitUntil: 'networkidle', timeout: 30000 });
+    const res = await page.goto(${JSON.stringify(target)}, { waitUntil: 'domcontentloaded', timeout: 20000 });
     status = res ? res.status() : 0;
   } catch (e) { errors.push(String(e)); }
   await page.waitForTimeout(800);
@@ -383,11 +397,14 @@ export function buildAgentTools(ctx: Ctx) {
   console.log(JSON.stringify({ status, errors: errors.slice(0, 20) }));
 })();`;
           await sbx.files.write(`${SHOT_DIR}/shot.cjs`, script);
-          const shot = await shell(`cd ${SHOT_DIR} && node shot.cjs`, {
+          const shot = await shell(`cd ${SHOT_DIR} && rm -f shot.png && node shot.cjs`, {
             toolId,
             stream: true,
-            timeoutMs: 120_000,
+            timeoutMs: 60_000,
           });
+          if (shot.exitCode !== 0) {
+            throw new Error(`Screenshot browser failed: ${shot.stderr || shot.stdout}`);
+          }
 
           const bytes = (await sbx.files.read(`${SHOT_DIR}/shot.png`, {
             format: "bytes",

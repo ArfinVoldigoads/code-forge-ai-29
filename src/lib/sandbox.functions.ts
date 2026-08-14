@@ -6,7 +6,7 @@ export const sandboxStatus = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const { requireUnlocked } = await import("./gate.server");
     await requireUnlocked();
-    const { getE2BKey } = await import("./e2b.server");
+    const { getE2BKey, getSandboxForChat } = await import("./e2b.server");
     const { db } = await import("./db.server");
     const apiKey = await getE2BKey();
     const { data: row } = await db
@@ -16,10 +16,16 @@ export const sandboxStatus = createServerFn({ method: "GET" })
       .eq("status", "running")
       .order("last_active_at", { ascending: false })
       .maybeSingle();
+    if (!apiKey) return { hasKey: false, sandboxId: null, lastActiveAt: null };
+    if (!row) return { hasKey: true, sandboxId: null, lastActiveAt: null };
+
+    // A stored row can point to an expired remote process. Probe it and let
+    // getSandboxForChat transparently replace the session when it is stale.
+    const active = await getSandboxForChat(data.chatId, apiKey);
     return {
-      hasKey: Boolean(apiKey),
-      sandboxId: row?.sandbox_id ?? null,
-      lastActiveAt: row?.last_active_at ?? null,
+      hasKey: true,
+      sandboxId: active.sandbox.sandboxId,
+      lastActiveAt: new Date().toISOString(),
     };
   });
 
@@ -185,5 +191,13 @@ export const startPreview = createServerFn({ method: "POST" })
     if (existing.exitCode === 0) return { url: `https://${sandbox.getHost(port)}`, port };
     const command = `if [ -f package.json ]; then\n  if [ -f bun.lockb ] || [ -f bun.lock ]; then bun run dev -- --host 0.0.0.0 --port ${port};\n  elif [ -f pnpm-lock.yaml ]; then pnpm dev -- --host 0.0.0.0 --port ${port};\n  else npm run dev -- --host 0.0.0.0 --port ${port}; fi\nelif [ -f index.html ]; then python3 -m http.server ${port} --bind 0.0.0.0;\nelse echo 'No web project found. Ask the agent to create one first.' >&2; exit 1; fi`;
     await sandbox.commands.run(shellCommand(command), { cwd: WORKDIR, background: true });
+    const ready = await runShell(
+      sandbox,
+      `for i in $(seq 1 20); do curl -fsS --max-time 2 http://127.0.0.1:${port} >/dev/null && exit 0; sleep 1; done; exit 1`,
+      { cwd: WORKDIR, timeoutMs: 30_000 },
+    );
+    if (ready.exitCode !== 0) {
+      throw new Error(`Preview did not start on port ${port}. Check the Console for the server error.`);
+    }
     return { url: `https://${sandbox.getHost(port)}`, port };
   });
