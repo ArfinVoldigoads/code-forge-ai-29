@@ -91,11 +91,17 @@ export function buildAgentTools(ctx: Ctx) {
   /** Shell helper that logs into the shared console feed and injects chat secrets. */
   const shell = async (
     command: string,
-    opts: { toolId?: string; timeoutMs?: number; stream?: boolean } = {},
+    opts: {
+      toolId?: string;
+      timeoutMs?: number;
+      stream?: boolean;
+      env?: Record<string, string>;
+    } = {},
   ) => {
     const started = Date.now();
     let active = await sandbox();
-    const envs = await getChatEnv(ctx.chatId);
+    const envs = { ...(await getChatEnv(ctx.chatId)), ...(opts.env ?? {}) };
+
     let stdout = "";
     let stderr = "";
     const emit = (streamName: "stdout" | "stderr", text: string) => {
