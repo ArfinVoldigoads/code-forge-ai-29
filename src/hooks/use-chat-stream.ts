@@ -111,10 +111,17 @@ function applyEvent(prevState: LiveState, event: StreamEvent): LiveState {
       return { ...prev, phase: "planning" };
     case "planning-update":
       return { ...prev, planning: prev.planning + event.text };
+    case "thought-start":
+      return { ...prev, phase: "thinking" };
+    case "thought-delta":
+      return { ...prev, thinking: prev.thinking + event.text };
+    case "phase":
+      return { ...prev, phaseLabel: event.message };
     case "thinking-start":
       return { ...prev, phase: "thinking" };
     case "thinking-update":
       return { ...prev, thinking: prev.thinking + event.text };
+
     case "assistant-delta":
       return { ...prev, phase: "answering", answer: prev.answer + event.text };
     case "tool-start":
