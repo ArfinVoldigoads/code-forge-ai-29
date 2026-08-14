@@ -9,6 +9,7 @@ export type LiveState = {
   tools: ToolEventState[];
   timeline: TimelineBlock[];
   phase: "idle" | "planning" | "thinking" | "answering" | "acting";
+  phaseLabel: string;
   error: string | null;
   cancelled: boolean;
 };
@@ -20,6 +21,7 @@ const EMPTY: LiveState = {
   tools: [],
   timeline: [],
   phase: "idle",
+  phaseLabel: "",
   error: null,
   cancelled: false,
 };
@@ -41,7 +43,7 @@ export function useChatStream(onFinish: () => void | Promise<void>) {
     async (chatId: string, requestId: string) => {
       const controller = new AbortController();
       abortRef.current = controller;
-      setLive({ ...EMPTY, phase: "planning" });
+      setLive({ ...EMPTY, phase: "thinking" });
       setStreaming(true);
 
       try {
@@ -111,10 +113,17 @@ function applyEvent(prevState: LiveState, event: StreamEvent): LiveState {
       return { ...prev, phase: "planning" };
     case "planning-update":
       return { ...prev, planning: prev.planning + event.text };
+    case "thought-start":
+      return { ...prev, phase: "thinking" };
+    case "thought-delta":
+      return { ...prev, thinking: prev.thinking + event.text };
+    case "phase":
+      return { ...prev, phaseLabel: event.message };
     case "thinking-start":
       return { ...prev, phase: "thinking" };
     case "thinking-update":
       return { ...prev, thinking: prev.thinking + event.text };
+
     case "assistant-delta":
       return { ...prev, phase: "answering", answer: prev.answer + event.text };
     case "tool-start":

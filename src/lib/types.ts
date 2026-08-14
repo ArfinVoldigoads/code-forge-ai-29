@@ -56,6 +56,10 @@ export type StreamEvent =
   | { type: "thinking-start" }
   | { type: "thinking-update"; text: string }
   | { type: "thinking-finish" }
+  | { type: "thought-start"; id: string }
+  | { type: "thought-delta"; id: string; text: string }
+  | { type: "thought-end"; id: string; durationMs: number }
+  | { type: "phase"; phase: string; message: string }
   | { type: "tool-start"; id: string; name: string; input: Json }
   | { type: "tool-progress"; id: string; text: string }
   | { type: "tool-result"; id: string; output: Json; error?: string }
@@ -83,9 +87,12 @@ export type ToolEventState = {
 /** One ordered block of the assistant turn: narration, an action, an image, a form. */
 export type TimelineBlock =
   | { kind: "text"; id: string; text: string }
+  | { kind: "thought"; id: string; text: string; durationMs: number | null; done: boolean }
+  | { kind: "phase"; id: string; phase: string; message: string }
   | { kind: "tool"; id: string; tool: ToolEventState }
   | { kind: "image"; id: string; url: string; caption?: string }
   | { kind: "secret"; id: string; reason: string; keys: SecretRequestKey[] };
+
 
 
 export type MessageDTO = {

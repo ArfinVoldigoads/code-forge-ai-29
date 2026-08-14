@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import { Brain, ChevronDown, KeyRound, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,6 +116,54 @@ function SecretForm({
   );
 }
 
+function ThoughtCard({
+  text,
+  durationMs,
+  done,
+}: {
+  text: string;
+  durationMs: number | null;
+  done: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const seconds = durationMs ? Math.max(1, Math.round(durationMs / 1000)) : null;
+  return (
+    <div className="panel-surface overflow-hidden rounded-md border border-border/60">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
+      >
+        {done ? (
+          <Brain className="h-3.5 w-3.5" />
+        ) : (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        )}
+        <span className="flex-1">
+          {done ? (seconds ? `Thought for ${seconds}s` : "Thought") : "Thinking…"}
+        </span>
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && text.trim() && (
+        <div className="scroll-thin max-h-80 overflow-y-auto border-t border-border/60 px-3 py-2 font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PhaseRow({ phase, message }: { phase: string; message: string }) {
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <Sparkles className="h-3.5 w-3.5 text-primary" />
+      <span className="font-mono uppercase tracking-wide text-[10px]">{phase}</span>
+      <span>{message}</span>
+    </div>
+  );
+}
+
 export function Timeline({ blocks, chatId }: { blocks: TimelineBlock[]; chatId: string }) {
   if (blocks.length === 0) return null;
   return (
@@ -123,6 +171,17 @@ export function Timeline({ blocks, chatId }: { blocks: TimelineBlock[]; chatId: 
       {blocks.map((block) => {
         if (block.kind === "text")
           return block.text.trim() ? <Markdown key={block.id} text={block.text} /> : null;
+        if (block.kind === "thought")
+          return (
+            <ThoughtCard
+              key={block.id}
+              text={block.text}
+              durationMs={block.durationMs}
+              done={block.done}
+            />
+          );
+        if (block.kind === "phase")
+          return <PhaseRow key={block.id} phase={block.phase} message={block.message} />;
         if (block.kind === "tool") return <ToolRow key={block.id} tool={block.tool} />;
         if (block.kind === "image")
           return (
@@ -139,3 +198,4 @@ export function Timeline({ blocks, chatId }: { blocks: TimelineBlock[]; chatId: 
     </div>
   );
 }
+

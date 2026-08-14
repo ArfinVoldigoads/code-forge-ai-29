@@ -29,6 +29,7 @@ const SHOT_DIR = "/home/user/.agentkit";
 
 export function buildAgentTools(ctx: Ctx) {
   let session: { sandbox: Sandbox; sessionId: string } | null = null;
+  let lastMark = Date.now();
 
   const sandbox = async () => {
     if (!session) {
@@ -37,6 +38,7 @@ export function buildAgentTools(ctx: Ctx) {
     }
     return session;
   };
+
 
   const logExecution = async (
     name: string,
@@ -80,8 +82,11 @@ export function buildAgentTools(ctx: Ctx) {
       ctx.record(failed);
       await logExecution(name, input, started, null, message);
       return { error: message };
+    } finally {
+      lastMark = Date.now();
     }
   };
+
 
   /** Shell helper that logs into the shared console feed and injects chat secrets. */
   const shell = async (
@@ -148,7 +153,77 @@ export function buildAgentTools(ctx: Ctx) {
   };
 
   return {
+    /* ------------------------------ reasoning --------------------------- */
+
+    think: tool({
+      description:
+        "Think privately before you act. Write your real deliberation in ENGLISH: what you know, what is still unknown, hypotheses, which file/command answers it, why you choose this approach, and what you will try if it fails. Required before your first action, after every failed or surprising tool result, before changing strategy, and before you conclude. This tool does nothing else — it never touches the sandbox.",
+      inputSchema: z.object({
+        thought: z.string(),
+        phase: z
+          .enum([
+            "understanding",
+            "discovery",
+            "planning",
+            "execution",
+            "debugging",
+            "testing",
+            "verification",
+            "completed",
+          ])
+          .optional(),
+      }),
+      execute: async ({ thought, phase }) => {
+        const id = crypto.randomUUID();
+        const durationMs = Math.max(0, Date.now() - lastMark);
+        const start: StreamEvent = { type: "thought-start", id };
+        const delta: StreamEvent = { type: "thought-delta", id, text: thought };
+        const end: StreamEvent = { type: "thought-end", id, durationMs };
+        for (const event of [start, delta, end]) {
+          ctx.send(event);
+          ctx.record(event);
+        }
+        if (phase) {
+          const phaseEvent: StreamEvent = {
+            type: "phase",
+            phase,
+            message: thought.split("\n")[0]?.slice(0, 140) ?? "",
+          };
+          ctx.send(phaseEvent);
+          ctx.record(phaseEvent);
+        }
+        lastMark = Date.now();
+        return { ok: true, note: "Thought recorded. Now take the next action immediately." };
+      },
+    }),
+
+    set_phase: tool({
+      description:
+        "Announce the phase you are entering so the user sees live progress (understanding, discovery, planning, execution, debugging, testing, verification, completed).",
+      inputSchema: z.object({
+        phase: z.enum([
+          "understanding",
+          "discovery",
+          "planning",
+          "execution",
+          "debugging",
+          "testing",
+          "verification",
+          "completed",
+        ]),
+        message: z.string(),
+      }),
+      execute: async ({ phase, message }) => {
+        const event: StreamEvent = { type: "phase", phase, message };
+        ctx.send(event);
+        ctx.record(event);
+        lastMark = Date.now();
+        return { ok: true };
+      },
+    }),
+
     /* ------------------------------ files ------------------------------ */
+
 
     write_file: tool({
       description: `Create or overwrite a file in the sandbox project (${WORKDIR}). Use relative paths.`,

@@ -7,15 +7,31 @@ const bodySchema = z.object({
   requestId: z.string().uuid(),
 });
 
-const PLANNING_PROMPT = `You are the planning stage of a senior software engineering agent with access to a Linux sandbox.
-Given the conversation, produce a concise engineering plan in markdown with these sections:
-1. Understanding — restate the request in one or two lines.
-2. Assumptions — what you are assuming.
-3. Approaches — at least two options with tradeoffs.
-4. Chosen approach — and why.
-5. Plan — numbered concrete implementation steps (use tools like write_file, run_command if available).
-6. Risks & edge cases — for each risk, name the concrete fallback to try if it happens (never "report to user" as the first fallback).
-Keep it under 300 words. Do not write the final answer or full code here.`;
+const THINKING_RULES = `## Thinking protocol (mandatory, repeated)
+- You have a \`think\` tool. Calling it produces a private "Thought for Ns" block in the timeline.
+- Write every thought in ENGLISH, first person, as real deliberation — what you know, what is unknown,
+  hypotheses, which file or command would answer it, why this approach, what you try if it fails.
+  A thought is NOT a draft of your answer and NOT a summary for the user.
+- Visible replies to the user use the language the user wrote in (Indonesian stays Indonesian).
+- You MUST call \`think\` at these moments:
+  1. before your first action in a turn (understanding + plan),
+  2. after any tool that failed or returned something unexpected,
+  3. before switching strategy,
+  4. before you declare the task done or blocked.
+- After a thought, immediately act. Never end your turn right after thinking.
+
+## Decision cycle (observe → decide → act → verify → repeat)
+- After every tool result: read the real output, decide the next single action, run it, verify it.
+- Use set_phase to announce phases (understanding, discovery, planning, execution, debugging, testing,
+  verification, completed) so the user sees live progress.
+- Plan internally and keep going: never ask "boleh saya lanjut?", "approve the plan?", or wait for the
+  user after planning, after listing files, after one command, or after finding an error. Continue
+  automatically until the task is implemented and verified.
+- Only stop for the user when the action is destructive, irreversible, needs a credential you must
+  request with request_secret, or deploys to production.
+- When work is done, run verification (build/typecheck/tests, start_dev_server + check_preview +
+  screenshot for web apps), fix what fails, and only then summarize what changed.`;
+
 
 function sse(event: StreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
@@ -124,8 +140,10 @@ You reason first, then act. Be precise, concrete and honest about limitations.
 Never reveal API keys, tokens, or environment variable values.
 Format code with fenced blocks that include the language.
 
+${THINKING_RULES}
+
 ## How to work (interleaved)
-Work in short cycles: write one or two sentences saying what you are about to do, call the tool,
+Work in short cycles: think, write one or two sentences saying what you are about to do, call the tool,
 then react to the real result in the next sentences, then act again. Never dump one long answer
 at the end — narrate as you go, in between tool calls.
 
@@ -206,21 +224,7 @@ ${skillBlock || "(none enabled)"}`;
             const events: StreamEvent[] = [];
 
             try {
-              // ---- planning phase (streamed live) ----
-              send({ type: "planning-start" });
-              const planStream = streamText({
-                model: buildModel(provider, modelRow.model_id),
-                system: PLANNING_PROMPT,
-                messages,
-                abortSignal: request.signal,
-              });
-              for await (const delta of planStream.textStream) {
-                planning += delta;
-                send({ type: "planning-update", text: delta });
-              }
-              send({ type: "planning-finish" });
-
-              // ---- answer phase (with sandbox tools when E2B is configured) ----
+              // ---- single autonomous loop: think → act → verify → repeat ----
               let tools: Record<string, unknown> | undefined;
               if (e2bKey) {
                 const { buildAgentTools } = await import("@/lib/agent-tools.server");
@@ -234,7 +238,7 @@ ${skillBlock || "(none enabled)"}`;
 
               const mainOptions = {
                 model: buildModel(provider, modelRow.model_id),
-                system: `${systemPrompt}\n\n## Plan agreed for this turn\n${planning}`,
+                system: systemPrompt,
                 messages,
                 abortSignal: request.signal,
                 ...(tools ? { tools, stopWhen: stepCountIs(120) } : {}),
@@ -242,9 +246,22 @@ ${skillBlock || "(none enabled)"}`;
               } as any;
               const main = streamText(mainOptions);
 
+              // Native reasoning (GPT-5/Gemini) renders as the same inline thought block
+              // as the `think` tool, so every model looks identical in the timeline.
+              let nativeThoughtId: string | null = null;
+              let nativeStartedAt = 0;
+              const closeNativeThought = () => {
+                if (!nativeThoughtId) return;
+                const end: StreamEvent = {
+                  type: "thought-end",
+                  id: nativeThoughtId,
+                  durationMs: Date.now() - nativeStartedAt,
+                };
+                send(end);
+                events.push(end);
+                nativeThoughtId = null;
+              };
 
-
-              let thinkingOpen = false;
               let segment = "";
               const flushSegment = () => {
                 if (segment.trim()) events.push({ type: "step-text", text: segment });
@@ -252,28 +269,45 @@ ${skillBlock || "(none enabled)"}`;
               };
               for await (const part of main.fullStream) {
                 if (part.type === "reasoning-delta") {
-                  if (!thinkingOpen) {
-                    thinkingOpen = true;
-                    send({ type: "thinking-start" });
+                  if (!nativeThoughtId) {
+                    nativeThoughtId = crypto.randomUUID();
+                    nativeStartedAt = Date.now();
+                    const start: StreamEvent = { type: "thought-start", id: nativeThoughtId };
+                    send(start);
+                    events.push(start);
                   }
                   thinking += part.text;
-                  send({ type: "thinking-update", text: part.text });
+                  const delta: StreamEvent = {
+                    type: "thought-delta",
+                    id: nativeThoughtId,
+                    text: part.text,
+                  };
+                  send(delta);
+                  events.push(delta);
                 } else if (part.type === "text-delta") {
-                  if (thinkingOpen) {
-                    thinkingOpen = false;
-                    send({ type: "thinking-finish" });
-                  }
+                  closeNativeThought();
                   answer += part.text;
                   segment += part.text;
                   send({ type: "assistant-delta", text: part.text });
                 } else if (part.type === "tool-call") {
+                  closeNativeThought();
                   flushSegment();
                 } else if (part.type === "error") {
                   throw part.error instanceof Error ? part.error : new Error(String(part.error));
                 }
               }
               flushSegment();
-              if (thinkingOpen) send({ type: "thinking-finish" });
+              closeNativeThought();
+
+              planning =
+                events
+                  .filter((e): e is Extract<StreamEvent, { type: "thought-delta" }> =>
+                    e.type === "thought-delta",
+                  )
+                  .map((e) => e.text)
+                  .join("\n\n")
+                  .slice(0, 4000) || "";
+
 
 
               const { data: saved } = await db
