@@ -38,10 +38,10 @@ const META: Record<
   cloudflare: {
     title: "Cloudflare",
     blurb:
-      "API token with Workers Scripts:Edit. Used by wrangler to create and deploy Workers.",
+      "dash.cloudflare.com → My Profile → API Tokens → Create Token → template \"Edit Cloudflare Workers\" (permissions: Account · Workers Scripts · Edit, and Account · Account Settings · Read). Account ID: Workers & Pages → Overview, right sidebar (32 hex chars). A Global API Key will NOT work here.",
     tokenLabel: "API Token",
     extraLabel: "Account ID",
-    extraHint: "Found on the Workers overview page.",
+    extraHint: "e.g. 8f1c…  (32 hex characters)",
   },
 };
 
