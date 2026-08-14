@@ -27,6 +27,8 @@ import {
   sandboxStatus,
   startPreview,
   startSandbox,
+  heartbeatSandbox,
+
   writeSandboxFile,
 } from "@/lib/sandbox.functions";
 
