@@ -141,3 +141,25 @@
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
 }
+
+@layer components {
+  .markdown-body > * + * { margin-top: 0.75rem; }
+  .markdown-body h1 { font-size: 1.4rem; font-weight: 650; margin-top: 1.5rem; }
+  .markdown-body h2 { font-size: 1.2rem; font-weight: 650; margin-top: 1.35rem; }
+  .markdown-body h3 { font-size: 1.05rem; font-weight: 650; margin-top: 1.2rem; }
+  .markdown-body ul { list-style: disc; padding-left: 1.4rem; }
+  .markdown-body ol { list-style: decimal; padding-left: 1.4rem; }
+  .markdown-body li + li { margin-top: 0.25rem; }
+  .markdown-body a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 3px; }
+  .markdown-body blockquote { border-left: 3px solid var(--color-border); padding-left: 1rem; color: var(--color-muted-foreground); }
+  .markdown-body table { display: block; width: 100%; overflow-x: auto; border-collapse: collapse; }
+  .markdown-body th, .markdown-body td { border: 1px solid var(--color-border); padding: 0.45rem 0.65rem; text-align: left; }
+  .markdown-body th { background: var(--color-muted); font-weight: 600; }
+  .markdown-body :not(pre) > code { border: 1px solid var(--color-border); border-radius: 0.25rem; background: var(--color-muted); padding: 0.1rem 0.3rem; font-size: 0.85em; }
+  .markdown-body hr { border-color: var(--color-border); margin-block: 1.25rem; }
+  .markdown-body .hljs-keyword, .markdown-body .hljs-selector-tag { color: var(--color-destructive); }
+  .markdown-body .hljs-string, .markdown-body .hljs-attr { color: var(--color-success); }
+  .markdown-body .hljs-title, .markdown-body .hljs-function { color: var(--color-primary); }
+  .markdown-body .hljs-comment { color: var(--color-muted-foreground); font-style: italic; }
+  .markdown-body .hljs-number, .markdown-body .hljs-literal { color: var(--color-foreground); }
+}

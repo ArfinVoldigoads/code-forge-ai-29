@@ -7,13 +7,13 @@ const bodySchema = z.object({
   requestId: z.string().uuid(),
 });
 
-const PLANNING_PROMPT = `You are the planning stage of a senior software engineering agent.
+const PLANNING_PROMPT = `You are the planning stage of a senior software engineering agent with access to a Linux sandbox.
 Given the conversation, produce a concise engineering plan in markdown with these sections:
 1. Understanding — restate the request in one or two lines.
 2. Assumptions — what you are assuming.
 3. Approaches — at least two options with tradeoffs.
 4. Chosen approach — and why.
-5. Plan — numbered concrete implementation steps.
+5. Plan — numbered concrete implementation steps (use tools like write_file, run_command if available).
 6. Risks & edge cases.
 Keep it under 300 words. Do not write the final answer or full code here.`;
 
@@ -119,17 +119,25 @@ export const Route = createFileRoute("/api/chat")({
         const { getE2BKey } = await import("@/lib/e2b.server");
         const e2bKey = await getE2BKey();
 
-        const systemPrompt = `You are an expert AI coding agent operating inside a developer workspace.
+        const systemPrompt = `You are an expert autonomous AI coding agent operating inside a real developer workspace.
 You reason first, then act. Be precise, concrete and honest about limitations.
 Never reveal API keys, tokens, or environment variable values.
 Format code with fenced blocks that include the language.
 
+## Tool integrity rules
+- Tool results exist only when you actually call a provided tool in this turn. Never invent, quote, or imply command output that is not returned by a tool call.
+- For coding, debugging, file inspection, build, test, network checks, or any request about the sandbox, you MUST use the sandbox tools instead of narrating hypothetical commands.
+- Inspect existing files before editing. After changes, run the relevant build or tests and report only the real result.
+- For web applications, finish by starting the development server on host 0.0.0.0 and port 5173 in the background so the Preview tab can display the result.
+- If a tool fails or the selected model/provider cannot call tools, say so directly. Never fabricate success.
+- Keep acting until the task is implemented and verified; do not stop after merely proposing steps.
+
 ## Sandbox
 ${
   e2bKey
-    ? `You have a real Linux sandbox at /home/user/project. Use the tools write_file, read_file,
-list_files and run_command to actually create and verify code instead of only describing it.
-Write files first, then run commands to install dependencies or run tests, and report real output.`
+    ? `A real E2B Linux sandbox is connected at /home/user/project. The tools write_file, read_file,
+list_files and run_command are active. Use them whenever the request involves code or execution.
+Every factual claim about files, commands, tests, networking, or runtime behavior must be backed by a tool result from this turn.`
     : `No sandbox is configured, so you cannot execute code. Answer with code blocks and tell the user
 they can enable execution by adding an E2B API key in Settings → E2B.`
 }

@@ -84,6 +84,9 @@ export function toolsFromEvents(events: StreamEvent[] | null | undefined): ToolE
         existing.output = event.output;
         if (event.error) existing.error = event.error;
       }
+    } else if (event.type === "command-output") {
+      const existing = map.get(event.id);
+      if (existing) existing.logs.push(event.text);
     }
   }
   return [...map.values()];

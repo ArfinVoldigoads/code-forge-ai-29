@@ -44,7 +44,7 @@ export function buildAgentTools(ctx: Ctx) {
   const run = async <T extends Json>(
     name: string,
     input: Json,
-    fn: () => Promise<T>,
+    fn: (toolId: string) => Promise<T>,
   ): Promise<Json> => {
     const id = crypto.randomUUID();
     const started = Date.now();
@@ -52,7 +52,7 @@ export function buildAgentTools(ctx: Ctx) {
     ctx.send(startEvent);
     ctx.record(startEvent);
     try {
-      const output = await fn();
+      const output = await fn(id);
       const done: StreamEvent = { type: "tool-result", id, output };
       ctx.send(done);
       ctx.record(done);
@@ -112,9 +112,8 @@ export function buildAgentTools(ctx: Ctx) {
         "Run a shell command inside the sandbox project directory. Use this to install packages, build, or run tests.",
       inputSchema: z.object({ command: z.string(), timeoutSeconds: z.number().optional() }),
       execute: async ({ command, timeoutSeconds }) =>
-        run("run_command", { command }, async () => {
+        run("run_command", { command }, async (toolId) => {
           const { sandbox: sbx, sessionId } = await sandbox();
-          const id = crypto.randomUUID();
           let stdout = "";
           let stderr = "";
           const result = await sbx.commands.run(command, {
@@ -122,11 +121,13 @@ export function buildAgentTools(ctx: Ctx) {
             timeoutMs: Math.min((timeoutSeconds ?? 120) * 1000, 300_000),
             onStdout: (text: string) => {
               stdout += text;
-              ctx.send({ type: "command-output", id, stream: "stdout", text });
+              ctx.send({ type: "command-output", id: toolId, stream: "stdout", text });
+              ctx.record({ type: "command-output", id: toolId, stream: "stdout", text });
             },
             onStderr: (text: string) => {
               stderr += text;
-              ctx.send({ type: "command-output", id, stream: "stderr", text });
+              ctx.send({ type: "command-output", id: toolId, stream: "stderr", text });
+              ctx.record({ type: "command-output", id: toolId, stream: "stderr", text });
             },
           });
           await db.from("command_outputs").insert({

@@ -138,7 +138,7 @@ function applyEvent(prev: LiveState, event: StreamEvent): LiveState {
       return {
         ...prev,
         tools: prev.tools.map((t) =>
-          t.status === "running" && t.name === "run_command"
+          t.id === event.id
             ? { ...t, logs: [...t.logs, event.text].slice(-200) }
             : t,
         ),
