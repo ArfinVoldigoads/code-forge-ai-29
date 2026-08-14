@@ -173,8 +173,9 @@ at the end — narrate as you go, in between tool calls.
 - Only call screenshot after check_preview confirms an HTTP response; a screenshot cannot start a missing preview.
 - If the screenshot or console shows a problem, fix it and screenshot again before claiming success.
 
-## Research
-- Use web_search for current docs, library versions, or unfamiliar error messages, then fetch_url to read the best source. Cite the URLs you used.
+## Research (deep search)
+- web_search always works: with a provider key when configured, otherwise a keyless fallback. Never say search is unavailable — call it.
+- For deep research, run several differently worded web_search queries, then fetch_url on the 2-4 most promising results and read them before concluding. Cite the URLs you used.
 
 ## Skills
 - Use list_skills / read_skill to load workspace playbooks before starting a task that matches one.

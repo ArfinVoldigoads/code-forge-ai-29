@@ -16,14 +16,57 @@ export async function getSearchSettings(): Promise<SearchSettings> {
   return { provider, apiKey: value.apiKey ?? null };
 }
 
+const decode = (s: string) =>
+  s
+    .replace(/<[^>]+>/g, "")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** Keyless fallback so search always works, even without a provider API key. */
+async function duckDuckGoSearch(query: string, maxResults: number): Promise<SearchHit[]> {
+  const res = await fetch("https://html.duckduckgo.com/html/", {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      "user-agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36",
+    },
+    body: new URLSearchParams({ q: query }).toString(),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`DuckDuckGo HTTP ${res.status}`);
+  const html = await res.text();
+  const hits: SearchHit[] = [];
+  const re =
+    /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>([\s\S]*?)(?=<a[^>]+class="[^"]*result__a|<\/body>)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && hits.length < maxResults) {
+    let url = m[1] ?? "";
+    const redirect = /uddg=([^&]+)/.exec(url);
+    if (redirect?.[1]) url = decodeURIComponent(redirect[1]);
+    if (!url.startsWith("http")) continue;
+    const snippetMatch = /class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/.exec(m[3] ?? "");
+    hits.push({
+      title: decode(m[2] ?? ""),
+      url,
+      snippet: snippetMatch?.[1] ? decode(snippetMatch[1]).slice(0, 600) : "",
+    });
+  }
+  if (!hits.length) throw new Error("No results from the keyless search fallback.");
+  return hits;
+}
+
 /** Web search through the configured provider. Never fabricates results. */
 export async function webSearch(query: string, maxResults = 6): Promise<SearchHit[]> {
   const { provider, apiKey } = await getSearchSettings();
-  if (!apiKey) {
-    throw new Error(
-      "Web search is not configured. The user must add a search API key in Settings → Search.",
-    );
-  }
+  if (!apiKey) return duckDuckGoSearch(query, maxResults);
+
 
   if (provider === "tavily") {
     const res = await fetch("https://api.tavily.com/search", {

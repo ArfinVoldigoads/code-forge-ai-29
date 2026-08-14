@@ -446,39 +446,29 @@ export function buildAgentTools(ctx: Ctx) {
             throw new Error(`Cannot take a screenshot because no preview is responding at ${target}. Call start_dev_server first and use the same port.`);
           }
 
-          const install = await shell(
-            `mkdir -p ${SHOT_DIR} && cd ${SHOT_DIR} && if [ ! -d node_modules/playwright ]; then npm init -y >/dev/null 2>&1; npm i playwright@1.49.1 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1; fi && echo ready`,
-            { toolId, stream: true, timeoutMs: 300_000 },
-          );
-          if (!install.stdout.includes("ready")) {
-            throw new Error(`Could not prepare the browser: ${install.stderr || install.stdout}`);
+          // Resolve an existing Chromium binary before paying for any install.
+          const findBin = `for c in chromium chromium-browser google-chrome google-chrome-stable; do command -v "$c" && exit 0; done; ls -1 "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | head -n1`;
+          let bin = (await shell(findBin, { timeoutMs: 20_000 })).stdout.trim().split("\n").pop() ?? "";
+
+          if (!bin) {
+            const install = await shell(
+              `npx --yes playwright@1.49.1 install --with-deps chromium 2>&1 | tail -n 20`,
+              { toolId, stream: true, timeoutMs: 540_000 },
+            );
+            bin = (await shell(findBin, { timeoutMs: 20_000 })).stdout.trim().split("\n").pop() ?? "";
+            if (!bin) {
+              throw new Error(
+                `Could not install a headless browser: ${clip(install.stderr || install.stdout)}`,
+              );
+            }
           }
 
-          const script = `const { chromium } = require('playwright');
-(async () => {
-  const browser = await chromium.launch({ args: ['--no-sandbox'], timeout: 20000 });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  const errors = [];
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  page.on('pageerror', (e) => errors.push(String(e)));
-  let status = 0;
-  try {
-    const res = await page.goto(${JSON.stringify(target)}, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    status = res ? res.status() : 0;
-  } catch (e) { errors.push(String(e)); }
-  await page.waitForTimeout(800);
-  await page.screenshot({ path: '${SHOT_DIR}/shot.png' });
-  await browser.close();
-  console.log(JSON.stringify({ status, errors: errors.slice(0, 20) }));
-})();`;
-          await sbx.files.write(`${SHOT_DIR}/shot.cjs`, script);
-          const shot = await shell(`cd ${SHOT_DIR} && rm -f shot.png && node shot.cjs`, {
-            toolId,
-            stream: true,
-            timeoutMs: 60_000,
-          });
+          const shot = await shell(
+            `mkdir -p ${SHOT_DIR} && rm -f ${SHOT_DIR}/shot.png && ${JSON.stringify(bin)} --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --hide-scrollbars --window-size=1280,900 --virtual-time-budget=4000 --screenshot=${SHOT_DIR}/shot.png ${JSON.stringify(target)} 2>&1 | tail -n 10; test -s ${SHOT_DIR}/shot.png`,
+            { toolId, stream: true, timeoutMs: 120_000 },
+          );
           if (shot.exitCode !== 0) {
-            throw new Error(`Screenshot browser failed: ${shot.stderr || shot.stdout}`);
+            throw new Error(`Screenshot browser failed: ${clip(shot.stderr || shot.stdout)}`);
           }
 
           const bytes = (await sbx.files.read(`${SHOT_DIR}/shot.png`, {
