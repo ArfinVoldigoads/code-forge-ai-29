@@ -19,7 +19,28 @@ export function applyTimelineEvent(
       }
       return [...blocks, { kind: "text", id: nextId(), text }];
     }
+    case "thought-start":
+      return [
+        ...blocks,
+        { kind: "thought", id: event.id, text: "", durationMs: null, done: false },
+      ];
+    case "thought-delta":
+      return blocks.map((b) =>
+        b.kind === "thought" && b.id === event.id ? { ...b, text: b.text + event.text } : b,
+      );
+    case "thought-end":
+      return blocks.map((b) =>
+        b.kind === "thought" && b.id === event.id
+          ? { ...b, done: true, durationMs: event.durationMs }
+          : b,
+      );
+    case "phase":
+      return [
+        ...blocks,
+        { kind: "phase", id: nextId(), phase: event.phase, message: event.message },
+      ];
     case "tool-start":
+
       return [
         ...blocks,
         {
