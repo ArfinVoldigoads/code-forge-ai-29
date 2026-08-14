@@ -1,35 +1,51 @@
-# Cek Database & Tool Database untuk Agent
+# Plan: Perbaiki deteksi OOM palsu & atur resource E2B
 
-## Hasil pengecekan connection string
+## Masalah
+- AI di AgentKit mengeluarkan pesan seperti `⚠️ OOM crash (RAM 478MB tidak cukup)`. Tidak ada tool yang mengukur RAM, jadi ini adalah diagnosis yang dibuat-buat (hallucination).
+- Saat ini sandbox dibuat dengan template E2B `base` secara hard-coded. Tidak ada setting RAM/template di UI.
+- E2B SDK versi ini tidak menerima parameter `memoryMB` saat `Sandbox.create`; resource ditentukan oleh template, bukan argumen runtime.
 
-`postgresql://postgres:password@helium/heliumdb?sslmode=disable` tidak bisa dites dari lingkungan build:
+## Tujuan
+1. Beri AI data resource nyata sebelum ia menyimpulkan OOM.
+2. Izinkan user memilih template E2B yang lebih besar RAM-nya dari Settings.
+3. Update instruksi agar AI tidak mengarang angka RAM atau diagnosis resource.
 
-```text
-psql: could not translate host name "helium" to address: Name or service not known
-```
+## Langkah implementasi
 
-Hostname `helium` bukan alamat publik — hanya bisa di-resolve dari dalam jaringan/container tempat database itu hidup (mis. sandbox agent). Jadi statusnya belum bisa dipastikan dari luar; pengecekan harus dijalankan dari dalam sandbox.
+### 1. Tool `system_info` untuk AI
+- Tambahkan tool baru di `src/lib/agent-tools.server.ts`:
+  - Jalankan `free -m`, `df -h /home/user/project`, `nproc`, `cat /proc/loadavg`, `cat /proc/meminfo | head -10`.
+  - Kembalikan JSON terstruktur: `memory`, `disk`, `cpus`, `load`.
+- Tool ini wajib dipanggil AI sebelum menyimpulkan masalah resource.
 
-## Yang akan dibangun
+### 2. Konfigurasi template E2B di Settings
+- Perluas value `app_settings.key = "e2b"` dengan field `templateId` (default `"base"`).
+- Di `src/lib/settings.functions.ts`:
+  - Tambahkan `getE2BTemplates` yang fetch `https://api.e2b.dev/templates` pakai API key user.
+  - Update `saveE2BKey` / `getE2BSettings` untuk membaca/menyimpan `templateId`.
+- Di `src/routes/settings.e2b.tsx`:
+  - Tambahkan dropdown/select template hasil fetch E2B.
+  - Tampilkan template yang sedang aktif dan status koneksi.
 
-Supaya kamu (dan AI-nya) bisa mengecek database seperti ini kapan saja:
+### 3. Gunakan template yang dipilih saat membuat sandbox
+- Di `src/lib/e2b.server.ts`, ubah `getSandboxForChat` agar membaca `templateId` dari `app_settings.e2b` dan menggunakannya di `Sandbox.create(templateId, ...)`.
+- Jika template yang dipilih tidak valid / tidak ditemukan, fallback ke `"base"` dan log warning.
 
-1. **Tool baru untuk agent: `db_check`**
-   Menerima connection string (atau nama secret yang menyimpannya), lalu dari dalam sandbox menjalankan probe: resolve host, tes TCP, `SELECT version()`, dan hitung tabel di schema `public`. Hasilnya: reachable / tidak, versi Postgres, latensi, dan pesan error mentah kalau gagal.
+### 4. Update system prompt
+- Tambahkan aturan di `src/routes/api/chat.ts`:
+  - "Never claim OOM, memory exhaustion, or resource limits unless `system_info` or a tool result explicitly reports it."
+  - "Do not invent RAM numbers like '478MB'. If you need resource data, call `system_info`."
+  - "When a command fails, report the actual exit code and stderr; do not assume it is OOM."
 
-2. **Tool baru: `db_query`**
-   Menjalankan query read-only (SELECT/EXPLAIN saja) terhadap connection string yang diberikan, output tabel teks yang dipotong aman (maks ~100 baris).
+### 5. Indikator resource di UI (opsional tapi direkomendasikan)
+- Di panel Sandbox, tambahkan tombol "Check resources" yang memanggil tool `system_info` dan menampilkan hasilnya.
+- Atau tampilkan template yang sedang aktif di header Sandbox Panel.
 
-3. **Tab "Database" di Sandbox Panel**
-   Kolom connection string (bisa ambil dari Secrets), tombol Test connection, tampilan status + daftar tabel, dan kotak query read-only. Semua eksekusi terjadi di dalam sandbox, jadi host internal seperti `helium` bisa dijangkau.
-
-4. **Auto-install klien**
-   Kalau `psql` belum ada di sandbox, probe akan memasangnya lebih dulu (`apt-get install -y postgresql-client`) satu kali dan menyimpan penanda supaya tidak diulang.
+## Hasil akhir yang diharapkan
+- AI berhenti mengeluarkan pesan `RAM 478MB tidak cukup` palsu.
+- User bisa memilih template E2B dengan RAM lebih besar dari Settings → E2B.
+- AI punya data resource nyata untuk didasari saat debugging error sandbox.
 
 ## Catatan teknis
-
-- Tool ditambahkan di `src/lib/agent-tools.server.ts` mengikuti pola tool yang sudah ada (`tool({ description, inputSchema, execute })`), memakai `runShell` dari `src/lib/e2b.server.ts` plus jalur auto-recovery sandbox yang sudah ada.
-- Server function `dbCheck` / `dbQuery` di `src/lib/sandbox.functions.ts` agar UI bisa memanggil hal yang sama seperti agent.
-- Connection string tidak pernah dicetak utuh ke console feed — di-mask (`postgresql://postgres:***@host/db`) sebelum di-log ke `command_outputs`.
-- Query dibatasi read-only lewat validasi prefix statement + `SET default_transaction_read_only = on`.
-- Tab baru ditambahkan di `src/components/workspace/sandbox-panel.tsx` sejajar Console/Files/Preview/Secrets.
+- E2B SDK saat ini tidak menerima argumen `memoryMB` di `Sandbox.create`. Resource diatur lewat template, makanya solusinya adalah pilihan template, bukan slider RAM.
+- Custom template dengan RAM lebih besar membutuhkan setup di dashboard E2B user (E2B Teams / custom template), tapi aplikasi cukup menyimpan dan menggunakan `templateId` yang dipilih.
