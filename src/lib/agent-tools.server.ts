@@ -29,6 +29,7 @@ const SHOT_DIR = "/home/user/.agentkit";
 
 export function buildAgentTools(ctx: Ctx) {
   let session: { sandbox: Sandbox; sessionId: string } | null = null;
+  let lastMark = Date.now();
 
   const sandbox = async () => {
     if (!session) {
@@ -37,6 +38,7 @@ export function buildAgentTools(ctx: Ctx) {
     }
     return session;
   };
+
 
   const logExecution = async (
     name: string,
