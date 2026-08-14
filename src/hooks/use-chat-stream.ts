@@ -109,9 +109,11 @@ export function useChatStream(onFinish: () => void | Promise<void>) {
       } finally {
         setStreaming(false);
         abortRef.current = null;
+        runRef.current = null;
         await onFinish();
         setLive(EMPTY);
       }
+
     },
     [onFinish],
   );
