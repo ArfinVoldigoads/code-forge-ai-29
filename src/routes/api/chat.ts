@@ -385,21 +385,7 @@ ${skillBlock || "(none enabled)"}`;
 
 
 
-              const { data: saved } = await db
-                .from("messages")
-                .insert({
-                  chat_id: chatId,
-                  role: "assistant",
-                  content: answer,
-                  planning,
-                  thinking: thinking || null,
-                  events: events as never,
-                  model_ref: `${provider.name}:${modelRow.model_id}`,
-                  request_id: requestId,
-                  status: cancelled ? "cancelled" : "complete",
-                } as never)
-                .select("id")
-                .single();
+              await persist(cancelled ? "cancelled" : "complete");
 
               await db
                 .from("chats")
@@ -411,42 +397,22 @@ ${skillBlock || "(none enabled)"}`;
               });
 
               if (cancelled) send({ type: "cancelled" });
-              send({ type: "assistant-finish", messageId: saved?.id ?? requestId });
+              send({ type: "assistant-finish", messageId: messageId ?? requestId });
             } catch (error) {
               const aborted =
                 cancelled ||
                 (error instanceof Error && /abort|cancel/i.test(error.name + error.message));
               if (aborted) {
-                if (answer || planning) {
-                  await db.from("messages").insert({
-                    chat_id: chatId,
-                    role: "assistant",
-                    content: answer,
-                    planning,
-                    thinking: thinking || null,
-                    model_ref: `${provider.name}:${modelRow.model_id}`,
-                    request_id: requestId,
-                    status: "cancelled",
-                  } as never);
-                }
+                await persist("cancelled");
                 send({ type: "cancelled" });
               } else {
                 const message = error instanceof Error ? error.message : "Generation failed";
                 console.error("[chat] generation failed:", message);
-                await db.from("messages").insert({
-                  chat_id: chatId,
-                  role: "assistant",
-                  content: answer,
-                  planning,
-                  thinking: thinking || null,
-                  model_ref: `${provider.name}:${modelRow.model_id}`,
-                  request_id: requestId,
-                  status: "error",
-                  error: message.slice(0, 800),
-                } as never);
+                await persist("error", message);
                 send({ type: "error", message: message.slice(0, 800) });
               }
             } finally {
+              activeRuns.delete(requestId);
               try {
                 controller.close();
               } catch {
@@ -455,6 +421,7 @@ ${skillBlock || "(none enabled)"}`;
             }
           },
         });
+
 
         return new Response(stream, {
           headers: {
