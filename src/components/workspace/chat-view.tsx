@@ -112,7 +112,12 @@ export function ChatView({ chatId }: { chatId: string }) {
     }
   }
 
-  const messages = chatQuery.data?.messages ?? [];
+  const allMessages = chatQuery.data?.messages ?? [];
+  // While we stream locally, the live timeline already shows the run; hide the
+  // half-written DB row so nothing is rendered twice.
+  const messages = streaming ? allMessages.filter((m) => m.status !== "streaming") : allMessages;
+  const remoteRunning = !streaming && allMessages.some((m) => m.status === "streaming");
+
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
