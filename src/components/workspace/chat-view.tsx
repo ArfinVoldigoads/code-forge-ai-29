@@ -22,7 +22,7 @@ function uuid() {
 
 export function ChatView({ chatId }: { chatId: string }) {
   const queryClient = useQueryClient();
-  const [input, setInput] = useState("");
+  
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
 
@@ -163,8 +163,6 @@ The agent thinks, explores the sandbox, edits code, runs it, fixes what breaks a
       </div>
 
       <Composer
-        value={input}
-        onChange={setInput}
         onSend={send}
         onStop={stop}
         streaming={streaming}
