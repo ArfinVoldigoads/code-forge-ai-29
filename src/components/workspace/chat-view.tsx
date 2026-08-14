@@ -65,14 +65,13 @@ export function ChatView({ chatId }: { chatId: string }) {
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
-  async function send() {
-    const content = input.trim();
+  async function send(raw: string) {
+    const content = raw.trim();
     if (!content || streaming) return;
     if (!activeModelId) {
       toast.error("Add a model in Settings → Models first.");
       return;
     }
-    setInput("");
     atBottomRef.current = true;
     try {
       if (!chatQuery.data?.chat.modelId) {
