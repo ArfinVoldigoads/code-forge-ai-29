@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { isValidElement, type ReactNode, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
@@ -17,13 +17,13 @@ function textContent(node: ReactNode): string {
 function CodeBlock({ children }: { children?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const code = textContent(children).replace(/\n$/, "");
-  const match = code.match(/^/);
-  void match;
+  const className = isValidElement<{ className?: string }>(children) ? children.props.className : "";
+  const language = className?.match(/language-([\w-]+)/)?.[1] ?? "code";
 
   return (
     <div className="group/code relative my-4 overflow-hidden rounded-md border border-border bg-background">
       <div className="flex h-9 items-center border-b border-border px-3 text-[10px] text-muted-foreground">
-        <span className="font-mono uppercase">code</span>
+        <span className="font-mono uppercase">{language}</span>
         <Button
           type="button"
           size="icon"

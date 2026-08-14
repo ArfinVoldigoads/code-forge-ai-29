@@ -4,11 +4,13 @@ import {
   ChevronLeft,
   File as FileIcon,
   Folder,
+  ExternalLink,
   Loader2,
   Play,
   RefreshCw,
   Save,
   TerminalSquare,
+  MonitorPlay,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,6 +22,7 @@ import {
   readSandboxFile,
   runCli,
   sandboxStatus,
+  startPreview,
   startSandbox,
   writeSandboxFile,
 } from "@/lib/sandbox.functions";
@@ -79,9 +82,10 @@ export function SandboxPanel({ chatId }: { chatId: string }) {
       )}
 
       <Tabs defaultValue="console" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="mx-3 mt-2 grid w-auto grid-cols-2">
+        <TabsList className="mx-3 mt-2 grid w-auto grid-cols-3">
           <TabsTrigger value="console">Console</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
+          <TabsTrigger value="preview">Preview</TabsTrigger>
         </TabsList>
         <TabsContent value="console" className="min-h-0 flex-1">
           <ConsoleTab chatId={chatId} />
@@ -89,7 +93,74 @@ export function SandboxPanel({ chatId }: { chatId: string }) {
         <TabsContent value="files" className="min-h-0 flex-1">
           <FilesTab chatId={chatId} />
         </TabsContent>
+        <TabsContent value="preview" className="min-h-0 flex-1">
+          <PreviewTab chatId={chatId} />
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function PreviewTab({ chatId }: { chatId: string }) {
+  const [port, setPort] = useState("5173");
+  const [url, setUrl] = useState<string | null>(null);
+  const [frameKey, setFrameKey] = useState(0);
+  const launch = useMutation({
+    mutationFn: () => startPreview({ data: { chatId, port: Number(port) } }),
+    onSuccess: (result) => {
+      setUrl(result.url);
+      setFrameKey((key) => key + 1);
+      toast.success("Preview server started");
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  return (
+    <div className="flex h-full min-h-0 flex-col p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <div className="relative w-24">
+          <Input
+            value={port}
+            onChange={(event) => setPort(event.target.value.replace(/\D/g, "").slice(0, 5))}
+            aria-label="Preview port"
+            className="h-8 pr-2 font-mono text-xs"
+          />
+        </div>
+        <Button
+          size="sm"
+          className="h-8"
+          disabled={launch.isPending || Number(port) < 1024}
+          onClick={() => launch.mutate()}
+        >
+          {launch.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MonitorPlay className="h-3.5 w-3.5" />}
+          <span className="ml-1.5">Run preview</span>
+        </Button>
+        {url && (
+          <>
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setFrameKey((key) => key + 1)} aria-label="Reload preview">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-8 w-8" asChild>
+              <a href={url} target="_blank" rel="noreferrer" aria-label="Open preview in a new tab"><ExternalLink className="h-3.5 w-3.5" /></a>
+            </Button>
+          </>
+        )}
+      </div>
+      {url ? (
+        <iframe
+          key={frameKey}
+          title="Sandbox live preview"
+          src={url}
+          className="min-h-0 flex-1 rounded-md border border-border bg-foreground"
+          sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
+        />
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-md border border-dashed border-border px-6 text-center">
+          <MonitorPlay className="mb-3 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm font-medium">No preview running</p>
+          <p className="mt-1 text-xs text-muted-foreground">Run the web project in the sandbox, then inspect it here.</p>
+        </div>
+      )}
     </div>
   );
 }

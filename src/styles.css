@@ -157,9 +157,9 @@
   .markdown-body th { background: var(--color-muted); font-weight: 600; }
   .markdown-body :not(pre) > code { border: 1px solid var(--color-border); border-radius: 0.25rem; background: var(--color-muted); padding: 0.1rem 0.3rem; font-size: 0.85em; }
   .markdown-body hr { border-color: var(--color-border); margin-block: 1.25rem; }
-  .markdown-body .hljs-keyword, .markdown-body .hljs-selector-tag { color: oklch(0.72 0.14 300); }
+  .markdown-body .hljs-keyword, .markdown-body .hljs-selector-tag { color: var(--color-destructive); }
   .markdown-body .hljs-string, .markdown-body .hljs-attr { color: var(--color-success); }
   .markdown-body .hljs-title, .markdown-body .hljs-function { color: var(--color-primary); }
   .markdown-body .hljs-comment { color: var(--color-muted-foreground); font-style: italic; }
-  .markdown-body .hljs-number, .markdown-body .hljs-literal { color: oklch(0.76 0.13 75); }
+  .markdown-body .hljs-number, .markdown-body .hljs-literal { color: var(--color-foreground); }
 }
