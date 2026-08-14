@@ -1,51 +1,50 @@
-# Plan: Perbaiki deteksi OOM palsu & atur resource E2B
+# Thinking berulang + agent yang tidak gampang menyerah
 
-## Masalah
-- AI di AgentKit mengeluarkan pesan seperti `⚠️ OOM crash (RAM 478MB tidak cukup)`. Tidak ada tool yang mengukur RAM, jadi ini adalah diagnosis yang dibuat-buat (hallucination).
-- Saat ini sandbox dibuat dengan template E2B `base` secara hard-coded. Tidak ada setting RAM/template di UI.
-- E2B SDK versi ini tidak menerima parameter `memoryMB` saat `Sandbox.create`; resource ditentukan oleh template, bukan argumen runtime.
+Dua masalah yang diperbaiki:
 
-## Tujuan
-1. Beri AI data resource nyata sebelum ia menyimpulkan OOM.
-2. Izinkan user memilih template E2B yang lebih besar RAM-nya dari Settings.
-3. Update instruksi agar AI tidak mengarang angka RAM atau diagnosis resource.
+1. Planning sekarang hanya sekali di awal, isinya seperti draft jawaban — bukan proses berpikir.
+2. Agent berhenti terlalu cepat saat error, tanpa memikirkan ulang pendekatan lain.
 
-## Langkah implementasi
+## Perubahan yang dibuat
 
-### 1. Tool `system_info` untuk AI
-- Tambahkan tool baru di `src/lib/agent-tools.server.ts`:
-  - Jalankan `free -m`, `df -h /home/user/project`, `nproc`, `cat /proc/loadavg`, `cat /proc/meminfo | head -10`.
-  - Kembalikan JSON terstruktur: `memory`, `disk`, `cpus`, `load`.
-- Tool ini wajib dipanggil AI sebelum menyimpulkan masalah resource.
+### 1. Thinking jadi blok berulang di dalam timeline
 
-### 2. Konfigurasi template E2B di Settings
-- Perluas value `app_settings.key = "e2b"` dengan field `templateId` (default `"base"`).
-- Di `src/lib/settings.functions.ts`:
-  - Tambahkan `getE2BTemplates` yang fetch `https://api.e2b.dev/templates` pakai API key user.
-  - Update `saveE2BKey` / `getE2BSettings` untuk membaca/menyimpan `templateId`.
-- Di `src/routes/settings.e2b.tsx`:
-  - Tambahkan dropdown/select template hasil fetch E2B.
-  - Tampilkan template yang sedang aktif dan status koneksi.
+Fase "Planning" satu kali di awal dihapus. Sebagai gantinya, agent berpikir berkali-kali sepanjang satu turn, dan setiap sesi berpikir muncul sebagai blok sendiri di urutan timeline:
 
-### 3. Gunakan template yang dipilih saat membuat sandbox
-- Di `src/lib/e2b.server.ts`, ubah `getSandboxForChat` agar membaca `templateId` dari `app_settings.e2b` dan menggunakannya di `Sandbox.create(templateId, ...)`.
-- Jika template yang dipilih tidak valid / tidak ditemukan, fallback ke `"base"` dan log warning.
+```text
+Thought for 6s   (collapsible, isi deliberasi bahasa Inggris)
+teks singkat "aku cek file X dulu"
+[tool: read_file]
+Thought for 4s   ("hasilnya kosong, berarti ... coba pendekatan B")
+[tool: run_command]
+balasan ke user (bahasa user)
+```
 
-### 4. Update system prompt
-- Tambahkan aturan di `src/routes/api/chat.ts`:
-  - "Never claim OOM, memory exhaustion, or resource limits unless `system_info` or a tool result explicitly reports it."
-  - "Do not invent RAM numbers like '478MB'. If you need resource data, call `system_info`."
-  - "When a command fails, report the actual exit code and stderr; do not assume it is OOM."
+Isi thinking bukan ringkasan jawaban, melainkan deliberasi nyata: apa yang belum diketahui, hipotesis, file mana yang perlu dibaca, kenapa pendekatan A dipilih, apa yang dicoba kalau gagal.
 
-### 5. Indikator resource di UI (opsional tapi direkomendasikan)
-- Di panel Sandbox, tambahkan tombol "Check resources" yang memanggil tool `system_info` dan menampilkan hasilnya.
-- Atau tampilkan template yang sedang aktif di header Sandbox Panel.
+### 2. Thinking wajib bahasa Inggris, balasan mengikuti bahasa user
 
-## Hasil akhir yang diharapkan
-- AI berhenti mengeluarkan pesan `RAM 478MB tidak cukup` palsu.
-- User bisa memilih template E2B dengan RAM lebih besar dari Settings → E2B.
-- AI punya data resource nyata untuk didasari saat debugging error sandbox.
+Blok thinking selalu bahasa Inggris (gaya first-person seperti contoh yang kamu kirim). Teks yang terlihat sebagai jawaban tetap memakai bahasa yang dipakai user.
 
-## Catatan teknis
-- E2B SDK saat ini tidak menerima argumen `memoryMB` di `Sandbox.create`. Resource diatur lewat template, makanya solusinya adalah pilihan template, bukan slider RAM.
-- Custom template dengan RAM lebih besar membutuhkan setup di dashboard E2B user (E2B Teams / custom template), tapi aplikasi cukup menyimpan dan menggunakan `templateId` yang dipilih.
+### 3. Kapan agent wajib berpikir ulang
+
+Agent diwajibkan membuka blok thinking baru pada titik-titik ini:
+- sebelum aksi pertama di setiap turn,
+- setiap kali sebuah tool gagal / hasilnya tidak sesuai harapan,
+- sebelum berganti strategi,
+- sebelum menyatakan selesai atau buntu.
+
+Jadi kalau thinking ke-1 tidak berhasil, agent berpikir lagi, mencoba lagi, dan baru berhenti setelah benar-benar buntu — dengan daftar percobaan nyata.
+
+## Detail teknis
+
+- `src/lib/types.ts`: tambah stream event `thought-start` / `thought-delta` / `thought-end` (dengan `id` + `durationMs`) dan `TimelineBlock` baru `{ kind: "thought", text, durationMs, done }`.
+- `src/lib/agent-tools.server.ts`: tambah tool `think({ thought })` — tidak menyentuh sandbox, hanya mengeluarkan event thought ke timeline dan disimpan ke `events`. Ini yang membuat thinking berulang bekerja pada provider OpenAI-compatible yang tidak mengirim `reasoning-delta`.
+- `src/routes/api/chat.ts`:
+  - hapus blok `PLANNING_PROMPT` dan pass planning-nya; kolom `planning` di DB diisi ringkasan thought pertama supaya riwayat lama tetap terbaca.
+  - `reasoning-delta` native tidak lagi masuk panel atas, tapi dipetakan ke blok thought inline yang sama, jadi model reasoning (GPT-5/Gemini) dan model biasa tampil identik.
+  - system prompt ditambah bagian "Thinking protocol" (kapan wajib `think`, bahasa Inggris, isi deliberasi bukan jawaban) dan penguatan aturan tidak-menyerah: setelah setiap kegagalan wajib `think` yang menyebut minimal satu pendekatan baru yang belum dicoba, dan dilarang mengakhiri turn dengan status gagal sebelum ada 3 percobaan berbeda yang tercatat di timeline.
+- `src/lib/timeline.ts`: fold event thought jadi blok terurut (delta digabung ke blok thought terakhir yang masih terbuka).
+- `src/components/workspace/timeline.tsx`: render blok thought sebagai panel collapsible "Thought for Ns" (saat berjalan: "Thinking…"), teks monospace redup, tertutup secara default.
+- `src/components/workspace/message-item.tsx`: hapus panel "Planning" dan panel "Thinking" global — keduanya sekarang inline di timeline. Pesan lama yang hanya punya `planning`/`thinking` tetap ditampilkan sebagai fallback.
+- `src/hooks/use-chat-stream.ts`: fase live jadi `thinking` saat blok thought terbuka; state planning dilepas dari UI live.
