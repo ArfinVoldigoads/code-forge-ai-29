@@ -61,6 +61,35 @@ export function buildAgentTools(ctx: Ctx) {
     return session;
   };
 
+  /** Rebuild the sandbox and keep going when the lease died mid-operation. */
+  const respawn = async () => {
+    const fresh = await recreateSandboxForChat(ctx.chatId, ctx.apiKey);
+    session = fresh;
+    await syncEnvFile(fresh.sandbox, ctx.chatId).catch(() => []);
+    const notice: StreamEvent = {
+      type: "command-output",
+      id: "sandbox-recovery",
+      stream: "stderr",
+      text: `\n[agentkit] Sandbox lease lost — started a new sandbox (${fresh.sandbox.sandboxId}) and resumed.\n`,
+    };
+    ctx.send(notice);
+    ctx.record(notice);
+    return fresh;
+  };
+
+  /** Run a sandbox SDK call, transparently retrying once on a dead sandbox. */
+  const withSandbox = async <T>(fn: (sbx: Sandbox) => Promise<T>): Promise<T> => {
+    const active = await sandbox();
+    try {
+      return await fn(active.sandbox);
+    } catch (error) {
+      if (!isDeadSandboxError(error)) throw error;
+      const fresh = await respawn();
+      return fn(fresh.sandbox);
+    }
+  };
+
+
 
 
   const logExecution = async (
