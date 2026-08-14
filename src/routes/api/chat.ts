@@ -226,17 +226,37 @@ they can enable execution by adding an E2B API key in Settings → E2B.`
 ${skillBlock || "(none enabled)"}`;
 
 
-        const messages = (history ?? []).map((m) => ({
-          role: m.role as "user" | "assistant" | "system",
-          content: m.content,
-        }));
+        const messages = (history ?? [])
+          .filter((m) => (m.content ?? "").trim().length > 0)
+          .map((m) => ({
+            role: m.role as "user" | "assistant" | "system",
+            content: m.content,
+          }));
 
 
         const encoder = new TextEncoder();
         let cancelled = false;
-        request.signal.addEventListener("abort", () => {
+        const runAbort = new AbortController();
+        activeRuns.set(requestId, runAbort);
+        runAbort.signal.addEventListener("abort", () => {
           cancelled = true;
         });
+
+        // Persist a placeholder immediately so the message never disappears
+        // when the user switches chats or reloads mid-generation.
+        const { data: placeholder } = await db
+          .from("messages")
+          .insert({
+            chat_id: chatId,
+            role: "assistant",
+            content: "",
+            model_ref: `${provider.name}:${modelRow.model_id}`,
+            request_id: requestId,
+            status: "streaming",
+          } as never)
+          .select("id")
+          .single();
+        const messageId = (placeholder as { id: string } | null)?.id ?? null;
 
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
@@ -244,7 +264,7 @@ ${skillBlock || "(none enabled)"}`;
               try {
                 controller.enqueue(encoder.encode(sse(event)));
               } catch {
-                /* client disconnected */
+                /* client disconnected — generation keeps running */
               }
             };
 
@@ -252,6 +272,29 @@ ${skillBlock || "(none enabled)"}`;
             let thinking = "";
             let answer = "";
             const events: StreamEvent[] = [];
+
+            const persist = async (status: string, error?: string) => {
+              if (!messageId) return;
+              await db
+                .from("messages")
+                .update({
+                  content: answer,
+                  planning,
+                  thinking: thinking || null,
+                  events: events as never,
+                  status,
+                  ...(error ? { error: error.slice(0, 800) } : {}),
+                } as never)
+                .eq("id", messageId);
+            };
+
+            let lastSave = Date.now();
+            const saveSoon = () => {
+              if (Date.now() - lastSave < 2000) return;
+              lastSave = Date.now();
+              void persist("streaming");
+            };
+
 
             try {
               // ---- single autonomous loop: think → act → verify → repeat ----
