@@ -12,6 +12,21 @@ export async function getE2BKey(): Promise<string | null> {
 
 type Session = { sandbox: Sandbox; sessionId: string };
 
+const SHELL_HEALTH_MARKER = "__agentkit_shell_ok__";
+
+function shellArgument(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+async function assertHealthyShell(sandbox: Sandbox): Promise<void> {
+  const result = await runShell(sandbox, `printf '${SHELL_HEALTH_MARKER}'`, {
+    timeoutMs: 10_000,
+  });
+  if (result.exitCode !== 0 || !result.stdout.includes(SHELL_HEALTH_MARKER)) {
+    throw new Error(result.stderr || "Sandbox shell health check failed");
+  }
+}
+
 /** Reuse a running sandbox for this chat, otherwise start a new one. */
 export async function getSandboxForChat(chatId: string, apiKey: string): Promise<Session> {
   const { data: existing } = await db
@@ -26,6 +41,7 @@ export async function getSandboxForChat(chatId: string, apiKey: string): Promise
     try {
       const sandbox = await Sandbox.connect(existing.sandbox_id, { apiKey });
       await sandbox.setTimeout(300_000);
+      await assertHealthyShell(sandbox);
       await db
         .from("sandbox_sessions")
         .update({ last_active_at: new Date().toISOString() })
@@ -38,6 +54,7 @@ export async function getSandboxForChat(chatId: string, apiKey: string): Promise
 
   const sandbox = await Sandbox.create(TEMPLATE, { apiKey, timeoutMs: 300_000 });
   await sandbox.commands.run(`mkdir -p ${WORKDIR}`);
+  await assertHealthyShell(sandbox);
   const { data: created } = await db
     .from("sandbox_sessions")
     .insert({
@@ -83,7 +100,7 @@ export function shellCommand(command: string): string {
     `mkdir -p ${WORKDIR}`,
     command,
   ].join("\n");
-  return `bash -lc ${JSON.stringify(script)}`;
+  return `bash -lc ${shellArgument(script)}`;
 }
 
 export type ShellResult = { exitCode: number; stdout: string; stderr: string };
@@ -119,6 +136,31 @@ export async function runShell(
     }
     return { exitCode: 1, stdout: "", stderr: e?.message ?? String(error) };
   }
+}
+
+const RECOVERABLE_SHELL_ERRORS = [
+  "syntax error near unexpected token",
+  "sandbox not running",
+  "sandbox is not running",
+  "sandbox was not found",
+  "failed to connect to sandbox",
+  "connection closed",
+  "session not found",
+];
+
+export function isRecoverableShellFailure(result: ShellResult): boolean {
+  const detail = `${result.stderr}\n${result.stdout}`.toLowerCase();
+  return RECOVERABLE_SHELL_ERRORS.some((message) => detail.includes(message));
+}
+
+/** Stop stale sessions so the next lookup creates a clean sandbox. */
+export async function recreateSandboxForChat(chatId: string, apiKey: string): Promise<Session> {
+  await db
+    .from("sandbox_sessions")
+    .update({ status: "stopped" })
+    .eq("chat_id", chatId)
+    .eq("status", "running");
+  return getSandboxForChat(chatId, apiKey);
 }
 
 /** Secrets the user filled in for this chat, ready to inject as env vars. */

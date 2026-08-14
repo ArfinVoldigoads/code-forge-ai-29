@@ -5,6 +5,8 @@ import { db } from "@/lib/db.server";
 import {
   getChatEnv,
   getSandboxForChat,
+  isRecoverableShellFailure,
+  recreateSandboxForChat,
   resolvePath,
   runShell,
   syncEnvFile,
@@ -87,7 +89,7 @@ export function buildAgentTools(ctx: Ctx) {
     opts: { toolId?: string; timeoutMs?: number; stream?: boolean } = {},
   ) => {
     const started = Date.now();
-    const { sandbox: sbx, sessionId } = await sandbox();
+    let active = await sandbox();
     const envs = await getChatEnv(ctx.chatId);
     let stdout = "";
     let stderr = "";
@@ -97,19 +99,32 @@ export function buildAgentTools(ctx: Ctx) {
       ctx.send(event);
       ctx.record(event);
     };
-    const result = await runShell(sbx, command, {
-      cwd: WORKDIR,
-      timeoutMs: opts.timeoutMs ?? 180_000,
-      envs,
-      onStdout: (text) => {
-        stdout += text;
-        emit("stdout", text);
-      },
-      onStderr: (text) => {
-        stderr += text;
-        emit("stderr", text);
-      },
-    });
+    const execute = () =>
+      runShell(active.sandbox, command, {
+        cwd: WORKDIR,
+        timeoutMs: opts.timeoutMs ?? 180_000,
+        envs,
+        onStdout: (text) => {
+          stdout += text;
+          emit("stdout", text);
+        },
+        onStderr: (text) => {
+          stderr += text;
+          emit("stderr", text);
+        },
+      });
+    let result = await execute();
+    let recovered = false;
+    if (isRecoverableShellFailure(result)) {
+      emit("stderr", "\n[agentkit] Sandbox shell unhealthy; creating a clean session and retrying once.\n");
+      active = await recreateSandboxForChat(ctx.chatId, ctx.apiKey);
+      session = active;
+      await syncEnvFile(active.sandbox, ctx.chatId).catch(() => []);
+      stdout = "";
+      stderr = "";
+      result = await execute();
+      recovered = true;
+    }
     if (!stdout) stdout = result.stdout;
     if (!stderr) stderr = result.stderr;
     await db
@@ -118,13 +133,18 @@ export function buildAgentTools(ctx: Ctx) {
         chat_id: ctx.chatId,
         source: "agent",
         duration_ms: Date.now() - started,
-        sandbox_session_id: sessionId || null,
+        sandbox_session_id: active.sessionId || null,
         command,
         stdout: clip(stdout),
         stderr: clip(stderr),
         exit_code: result.exitCode,
       } as never);
-    return { exitCode: result.exitCode, stdout: clip(stdout), stderr: clip(stderr) };
+    return {
+      exitCode: result.exitCode,
+      stdout: clip(stdout),
+      stderr: clip(stderr),
+      ...(recovered ? { recovered: true } : {}),
+    };
   };
 
   return {

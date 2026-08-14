@@ -96,11 +96,31 @@ export const runCli = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const started = Date.now();
     const { sandbox, sessionId } = await session(data.chatId);
-    const { resolvePath, WORKDIR, runShell } = await import("./e2b.server");
+    const {
+      getE2BKey,
+      isRecoverableShellFailure,
+      recreateSandboxForChat,
+      resolvePath,
+      WORKDIR,
+      runShell,
+    } = await import("./e2b.server");
     const { db } = await import("./db.server");
     const cwd = data.cwd ? resolvePath(data.cwd) : WORKDIR;
     const clip = (t: string) => (t.length > 20000 ? `${t.slice(0, 20000)}\n…truncated` : t);
-    const result = await runShell(sandbox, data.command, { cwd, timeoutMs: 180_000 });
+    let activeSandbox = sandbox;
+    let activeSessionId = sessionId;
+    let result = await runShell(activeSandbox, data.command, { cwd, timeoutMs: 180_000 });
+    let recovered = false;
+    if (isRecoverableShellFailure(result)) {
+      const apiKey = await getE2BKey();
+      if (apiKey) {
+        const replacement = await recreateSandboxForChat(data.chatId, apiKey);
+        activeSandbox = replacement.sandbox;
+        activeSessionId = replacement.sessionId;
+        result = await runShell(activeSandbox, data.command, { cwd, timeoutMs: 180_000 });
+        recovered = true;
+      }
+    }
     const hint =
       result.exitCode === 127
         ? "\ncommand not found (exit 127) — install it first, e.g. `npm i -g <tool>` or `apt-get install -y <pkg>`."
@@ -115,13 +135,13 @@ export const runCli = createServerFn({ method: "POST" })
       chat_id: data.chatId,
       source: "user",
       duration_ms: durationMs,
-      sandbox_session_id: sessionId || null,
+      sandbox_session_id: activeSessionId || null,
       command: data.command,
       stdout: out.stdout,
       stderr: out.stderr,
       exit_code: out.exitCode,
     } as never);
-    return { ...out, durationMs };
+    return { ...out, durationMs, recovered };
   });
 
 /** Unified console feed: commands run by you AND by the agent, newest last. */
