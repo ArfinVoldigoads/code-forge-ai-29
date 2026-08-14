@@ -7,13 +7,13 @@ const bodySchema = z.object({
   requestId: z.string().uuid(),
 });
 
-const PLANNING_PROMPT = `You are the planning stage of a senior software engineering agent.
+const PLANNING_PROMPT = `You are the planning stage of a senior software engineering agent with access to a Linux sandbox.
 Given the conversation, produce a concise engineering plan in markdown with these sections:
 1. Understanding — restate the request in one or two lines.
 2. Assumptions — what you are assuming.
 3. Approaches — at least two options with tradeoffs.
 4. Chosen approach — and why.
-5. Plan — numbered concrete implementation steps.
+5. Plan — numbered concrete implementation steps (use tools like write_file, run_command if available).
 6. Risks & edge cases.
 Keep it under 300 words. Do not write the final answer or full code here.`;
 
