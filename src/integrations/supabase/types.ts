@@ -135,31 +135,40 @@ export type Database = {
       }
       command_outputs: {
         Row: {
+          chat_id: string | null
           command: string
           created_at: string
+          duration_ms: number | null
           exit_code: number | null
           id: string
           sandbox_session_id: string | null
+          source: string
           stderr: string
           stdout: string
           tool_execution_id: string | null
         }
         Insert: {
+          chat_id?: string | null
           command: string
           created_at?: string
+          duration_ms?: number | null
           exit_code?: number | null
           id?: string
           sandbox_session_id?: string | null
+          source?: string
           stderr?: string
           stdout?: string
           tool_execution_id?: string | null
         }
         Update: {
+          chat_id?: string | null
           command?: string
           created_at?: string
+          duration_ms?: number | null
           exit_code?: number | null
           id?: string
           sandbox_session_id?: string | null
+          source?: string
           stderr?: string
           stdout?: string
           tool_execution_id?: string | null

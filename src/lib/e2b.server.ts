@@ -86,4 +86,32 @@ export function shellCommand(command: string): string {
   return `bash -lc ${JSON.stringify(script)}`;
 }
 
+export type ShellResult = { exitCode: number; stdout: string; stderr: string };
+
+/**
+ * Run a command and NEVER throw on a non-zero exit — E2B raises
+ * CommandExitError, which otherwise surfaces as a useless "exit status 2".
+ */
+export async function runShell(
+  sandbox: Sandbox,
+  command: string,
+  opts: { cwd?: string; timeoutMs?: number; onStdout?: (t: string) => void; onStderr?: (t: string) => void } = {},
+): Promise<ShellResult> {
+  try {
+    const result = await sandbox.commands.run(shellCommand(command), {
+      cwd: opts.cwd ?? WORKDIR,
+      timeoutMs: opts.timeoutMs ?? 180_000,
+      ...(opts.onStdout ? { onStdout: opts.onStdout } : {}),
+      ...(opts.onStderr ? { onStderr: opts.onStderr } : {}),
+    });
+    return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
+  } catch (error) {
+    const e = error as { exitCode?: number; stdout?: string; stderr?: string; message?: string };
+    if (typeof e?.exitCode === "number") {
+      return { exitCode: e.exitCode, stdout: e.stdout ?? "", stderr: e.stderr ?? e.message ?? "" };
+    }
+    return { exitCode: 1, stdout: "", stderr: e?.message ?? String(error) };
+  }
+}
+
 export { WORKDIR };

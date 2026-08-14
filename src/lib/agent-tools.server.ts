@@ -113,11 +113,12 @@ export function buildAgentTools(ctx: Ctx) {
       inputSchema: z.object({ command: z.string(), timeoutSeconds: z.number().optional() }),
       execute: async ({ command, timeoutSeconds }) =>
         run("run_command", { command }, async (toolId) => {
+          const started = Date.now();
           const { sandbox: sbx, sessionId } = await sandbox();
           let stdout = "";
           let stderr = "";
-          const { shellCommand } = await import("@/lib/e2b.server");
-          const result = await sbx.commands.run(shellCommand(command), {
+          const { runShell } = await import("@/lib/e2b.server");
+          const result = await runShell(sbx, command, {
             cwd: WORKDIR,
             timeoutMs: Math.min((timeoutSeconds ?? 120) * 1000, 300_000),
             onStdout: (text: string) => {
@@ -131,7 +132,12 @@ export function buildAgentTools(ctx: Ctx) {
               ctx.record({ type: "command-output", id: toolId, stream: "stderr", text });
             },
           });
+          if (!stdout) stdout = result.stdout;
+          if (!stderr) stderr = result.stderr;
           await db.from("command_outputs").insert({
+            chat_id: ctx.chatId,
+            source: "agent",
+            duration_ms: Date.now() - started,
             sandbox_session_id: sessionId || null,
             command,
             stdout: clip(stdout),
