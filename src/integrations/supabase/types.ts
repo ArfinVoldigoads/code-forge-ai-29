@@ -413,7 +413,7 @@ export type Database = {
           org_id: string | null
           status: string
           status_message: string | null
-          type: string
+          type: string | null
           updated_at: string
         }
         Insert: {
@@ -427,7 +427,7 @@ export type Database = {
           org_id?: string | null
           status?: string
           status_message?: string | null
-          type: string
+          type?: string | null
           updated_at?: string
         }
         Update: {
@@ -441,7 +441,7 @@ export type Database = {
           org_id?: string | null
           status?: string
           status_message?: string | null
-          type?: string
+          type?: string | null
           updated_at?: string
         }
         Relationships: []
