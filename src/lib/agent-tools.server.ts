@@ -289,8 +289,7 @@ export function buildAgentTools(ctx: Ctx) {
       inputSchema: z.object({ path: z.string(), content: z.string() }),
       execute: async ({ path, content }) =>
         run("write_file", { path }, async () => {
-          const { sandbox: sbx } = await sandbox();
-          await sbx.files.write(resolvePath(path), content);
+          await withSandbox((sbx) => sbx.files.write(resolvePath(path), content));
           const change: StreamEvent = { type: "file-change", path, action: "write" };
           ctx.send(change);
           ctx.record(change);
@@ -308,8 +307,7 @@ export function buildAgentTools(ctx: Ctx) {
       }),
       execute: async ({ path, startLine, endLine }) =>
         run("read_file", { path, startLine: startLine ?? null, endLine: endLine ?? null }, async () => {
-          const { sandbox: sbx } = await sandbox();
-          const content = await sbx.files.read(resolvePath(path));
+          const content = await withSandbox((sbx) => sbx.files.read(resolvePath(path)));
           if (!startLine && !endLine) return { path, content: clip(content) };
           const lines = content.split("\n");
           const from = (startLine ?? 1) - 1;
@@ -334,15 +332,14 @@ export function buildAgentTools(ctx: Ctx) {
       inputSchema: z.object({ path: z.string(), find: z.string(), replace: z.string() }),
       execute: async ({ path, find, replace }) =>
         run("apply_patch", { path }, async () => {
-          const { sandbox: sbx } = await sandbox();
           const full = resolvePath(path);
-          const content = await sbx.files.read(full);
+          const content = await withSandbox((sbx) => sbx.files.read(full));
           const occurrences = content.split(find).length - 1;
           if (occurrences === 0) throw new Error("Snippet not found — read the file again.");
           if (occurrences > 1)
             throw new Error(`Snippet appears ${occurrences} times — include more context.`);
           const next = content.replace(find, replace);
-          await sbx.files.write(full, next);
+          await withSandbox((sbx) => sbx.files.write(full, next));
           const change: StreamEvent = { type: "file-change", path, action: "patch" };
           ctx.send(change);
           ctx.record(change);
@@ -355,10 +352,10 @@ export function buildAgentTools(ctx: Ctx) {
       inputSchema: z.object({ path: z.string().optional() }),
       execute: async ({ path }) =>
         run("list_files", { path: path ?? "." }, async () => {
-          const { sandbox: sbx } = await sandbox();
-          const entries = await sbx.files.list(resolvePath(path ?? "."));
+          const entries = await withSandbox((sbx) => sbx.files.list(resolvePath(path ?? ".")));
           return { entries: entries.map((e) => ({ name: e.name, type: e.type ?? "file" })) };
         }),
+
     }),
 
     project_tree: tool({
