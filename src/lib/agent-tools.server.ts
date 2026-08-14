@@ -82,8 +82,11 @@ export function buildAgentTools(ctx: Ctx) {
       ctx.record(failed);
       await logExecution(name, input, started, null, message);
       return { error: message };
+    } finally {
+      lastMark = Date.now();
     }
   };
+
 
   /** Shell helper that logs into the shared console feed and injects chat secrets. */
   const shell = async (
