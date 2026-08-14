@@ -368,7 +368,9 @@ ${skillBlock || "(none enabled)"}`;
                 } else if (part.type === "error") {
                   throw part.error instanceof Error ? part.error : new Error(String(part.error));
                 }
+                saveSoon();
               }
+
               flushSegment();
               closeNativeThought();
 
