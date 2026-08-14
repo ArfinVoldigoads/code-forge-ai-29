@@ -164,8 +164,15 @@ The agent thinks, explores the sandbox, edits code, runs it, fixes what breaks a
           )}
 
 
+          {remoteRunning && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              This task is still running in the background…
+            </div>
+          )}
+
           {live.error && (
-            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+
               {live.error}
             </p>
           )}
