@@ -227,8 +227,7 @@ export const testModel = createServerFn({ method: "POST" })
     const { requireUnlocked } = await import("./gate.server");
     await requireUnlocked();
     const { db, audit } = await import("./db.server");
-    const { buildModel } = await import("./ai.server");
-    const { generateText } = await import("ai");
+    const { probeProvider } = await import("./ai.server");
 
     const { data: row, error } = await db
       .from("models")
@@ -238,17 +237,7 @@ export const testModel = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!row?.providers) throw new Error("Model or provider not found");
 
-    let result: { ok: boolean; message: string };
-    try {
-      const out = await generateText({
-        model: buildModel(row.providers as never, row.model_id),
-        prompt: "Reply with the single word: ready",
-        abortSignal: AbortSignal.timeout(30000),
-      });
-      result = { ok: true, message: `Responded: ${out.text.trim().slice(0, 80) || "(empty)"}` };
-    } catch (e) {
-      result = { ok: false, message: (e instanceof Error ? e.message : String(e)).slice(0, 400) };
-    }
+    const result = await probeProvider(row.providers as never, row.model_id, 30000);
 
     await db
       .from("models")
