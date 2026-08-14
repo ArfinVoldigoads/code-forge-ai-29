@@ -1,7 +1,13 @@
+import { useState } from "react";
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { WorkspaceShell } from "@/components/workspace/shell";
 import { ChatView } from "@/components/workspace/chat-view";
+import { SandboxPanel } from "@/components/workspace/sandbox-panel";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { getGateStatus } from "@/lib/gate.functions";
+
 
 export const Route = createFileRoute("/chat/$chatId")({
   beforeLoad: async () => {
