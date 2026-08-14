@@ -5,7 +5,6 @@ import {
   Check,
   ChevronDown,
   Copy,
-  ListChecks,
   Pencil,
   RotateCcw,
   X,
@@ -139,16 +138,13 @@ export function MessageItem({
 
   return (
     <div className="space-y-2">
-      <CollapsiblePanel
-        title="Planning"
-        icon={<ListChecks className="h-3.5 w-3.5" />}
-        text={message.planning ?? ""}
-      />
-      <CollapsiblePanel
-        title="Thinking"
-        icon={<Brain className="h-3.5 w-3.5" />}
-        text={message.thinking ?? ""}
-      />
+      {timeline.every((b) => b.kind !== "thought") && (
+        <CollapsiblePanel
+          title="Thinking"
+          icon={<Brain className="h-3.5 w-3.5" />}
+          text={message.thinking || message.planning || ""}
+        />
+      )}
 
       <Timeline blocks={timeline} chatId={chatId} />
 

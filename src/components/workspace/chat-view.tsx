@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Brain, ListChecks, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Composer } from "./composer";
-import { CollapsiblePanel, MessageItem } from "./message-item";
+import { MessageItem } from "./message-item";
 import { Timeline } from "./timeline";
 import { useChatStream } from "@/hooks/use-chat-stream";
 
@@ -57,7 +57,7 @@ export function ChatView({ chatId }: { chatId: string }) {
     if (el && atBottomRef.current) el.scrollTop = el.scrollHeight;
   };
 
-  useEffect(scrollToBottom, [chatQuery.data?.messages.length, live.answer, live.planning, live.tools.length]);
+  useEffect(scrollToBottom, [chatQuery.data?.messages.length, live.answer, live.timeline.length, live.tools.length]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -122,8 +122,8 @@ export function ChatView({ chatId }: { chatId: string }) {
             <div className="panel-surface p-5">
               <h1 className="mb-1 text-base font-semibold">Start a coding task</h1>
               <p className="text-sm text-muted-foreground">
-                The agent plans out loud before it answers: assumptions, approaches, tradeoffs, then
-                a concrete implementation plan.
+The agent thinks, explores the sandbox, edits code, runs it, fixes what breaks and verifies
+                the result — automatically, without waiting for approval between steps.
               </p>
             </div>
           )}
@@ -141,25 +141,16 @@ export function ChatView({ chatId }: { chatId: string }) {
 
           {streaming && (
             <div className="space-y-2">
-              <CollapsiblePanel
-                title={live.phase === "planning" ? "Planning…" : "Planning"}
-                icon={<ListChecks className="h-3.5 w-3.5" />}
-                text={live.planning}
-                defaultOpen
-              />
-              <CollapsiblePanel
-                title={live.phase === "thinking" ? "Thinking…" : "Thinking"}
-                icon={<Brain className="h-3.5 w-3.5" />}
-                text={live.thinking}
-                defaultOpen
-              />
               <Timeline blocks={live.timeline} chatId={chatId} />
-              {live.timeline.length === 0 && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />{" "}
-                  {live.phase === "acting" ? "Working in the sandbox…" : "Working…"}
-                </div>
-              )}
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {live.phaseLabel ||
+                  (live.phase === "acting"
+                    ? "Working in the sandbox…"
+                    : live.phase === "thinking"
+                      ? "Thinking…"
+                      : "Working…")}
+              </div>
             </div>
           )}
 
