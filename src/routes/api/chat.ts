@@ -5,7 +5,13 @@ import type { StreamEvent } from "@/lib/types";
 const bodySchema = z.object({
   chatId: z.string().uuid(),
   requestId: z.string().uuid(),
+  cancel: z.boolean().optional(),
 });
+
+// Runs keep going even when the browser navigates away or the tab closes.
+// Only an explicit cancel request aborts them.
+const activeRuns = new Map<string, AbortController>();
+
 
 const THINKING_RULES = `## Thinking protocol (mandatory, repeated)
 - You have a \`think\` tool. Calling it produces a private "Thought for Ns" block in the timeline.
@@ -55,7 +61,15 @@ export const Route = createFileRoute("/api/chat")({
             headers: { "content-type": "application/json" },
           });
         }
-        const { chatId, requestId } = parsed.data;
+        const { chatId, requestId, cancel } = parsed.data;
+
+        if (cancel) {
+          activeRuns.get(requestId)?.abort();
+          return new Response(JSON.stringify({ ok: true }), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+
 
         const { db, audit } = await import("@/lib/db.server");
         const { buildModel } = await import("@/lib/ai.server");
@@ -212,17 +226,37 @@ they can enable execution by adding an E2B API key in Settings → E2B.`
 ${skillBlock || "(none enabled)"}`;
 
 
-        const messages = (history ?? []).map((m) => ({
-          role: m.role as "user" | "assistant" | "system",
-          content: m.content,
-        }));
+        const messages = (history ?? [])
+          .filter((m) => (m.content ?? "").trim().length > 0)
+          .map((m) => ({
+            role: m.role as "user" | "assistant" | "system",
+            content: m.content,
+          }));
 
 
         const encoder = new TextEncoder();
         let cancelled = false;
-        request.signal.addEventListener("abort", () => {
+        const runAbort = new AbortController();
+        activeRuns.set(requestId, runAbort);
+        runAbort.signal.addEventListener("abort", () => {
           cancelled = true;
         });
+
+        // Persist a placeholder immediately so the message never disappears
+        // when the user switches chats or reloads mid-generation.
+        const { data: placeholder } = await db
+          .from("messages")
+          .insert({
+            chat_id: chatId,
+            role: "assistant",
+            content: "",
+            model_ref: `${provider.name}:${modelRow.model_id}`,
+            request_id: requestId,
+            status: "streaming",
+          } as never)
+          .select("id")
+          .single();
+        const messageId = (placeholder as { id: string } | null)?.id ?? null;
 
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
@@ -230,7 +264,7 @@ ${skillBlock || "(none enabled)"}`;
               try {
                 controller.enqueue(encoder.encode(sse(event)));
               } catch {
-                /* client disconnected */
+                /* client disconnected — generation keeps running */
               }
             };
 
@@ -238,6 +272,29 @@ ${skillBlock || "(none enabled)"}`;
             let thinking = "";
             let answer = "";
             const events: StreamEvent[] = [];
+
+            const persist = async (status: string, error?: string) => {
+              if (!messageId) return;
+              await db
+                .from("messages")
+                .update({
+                  content: answer,
+                  planning,
+                  thinking: thinking || null,
+                  events: events as never,
+                  status,
+                  ...(error ? { error: error.slice(0, 800) } : {}),
+                } as never)
+                .eq("id", messageId);
+            };
+
+            let lastSave = Date.now();
+            const saveSoon = () => {
+              if (Date.now() - lastSave < 2000) return;
+              lastSave = Date.now();
+              void persist("streaming");
+            };
+
 
             try {
               // ---- single autonomous loop: think → act → verify → repeat ----
@@ -256,7 +313,7 @@ ${skillBlock || "(none enabled)"}`;
                 model: buildModel(provider, modelRow.model_id),
                 system: systemPrompt,
                 messages,
-                abortSignal: request.signal,
+                abortSignal: runAbort.signal,
                 ...(tools ? { tools, stopWhen: stepCountIs(120) } : {}),
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
               } as any;
@@ -311,7 +368,9 @@ ${skillBlock || "(none enabled)"}`;
                 } else if (part.type === "error") {
                   throw part.error instanceof Error ? part.error : new Error(String(part.error));
                 }
+                saveSoon();
               }
+
               flushSegment();
               closeNativeThought();
 
@@ -326,21 +385,7 @@ ${skillBlock || "(none enabled)"}`;
 
 
 
-              const { data: saved } = await db
-                .from("messages")
-                .insert({
-                  chat_id: chatId,
-                  role: "assistant",
-                  content: answer,
-                  planning,
-                  thinking: thinking || null,
-                  events: events as never,
-                  model_ref: `${provider.name}:${modelRow.model_id}`,
-                  request_id: requestId,
-                  status: cancelled ? "cancelled" : "complete",
-                } as never)
-                .select("id")
-                .single();
+              await persist(cancelled ? "cancelled" : "complete");
 
               await db
                 .from("chats")
@@ -352,42 +397,22 @@ ${skillBlock || "(none enabled)"}`;
               });
 
               if (cancelled) send({ type: "cancelled" });
-              send({ type: "assistant-finish", messageId: saved?.id ?? requestId });
+              send({ type: "assistant-finish", messageId: messageId ?? requestId });
             } catch (error) {
               const aborted =
                 cancelled ||
                 (error instanceof Error && /abort|cancel/i.test(error.name + error.message));
               if (aborted) {
-                if (answer || planning) {
-                  await db.from("messages").insert({
-                    chat_id: chatId,
-                    role: "assistant",
-                    content: answer,
-                    planning,
-                    thinking: thinking || null,
-                    model_ref: `${provider.name}:${modelRow.model_id}`,
-                    request_id: requestId,
-                    status: "cancelled",
-                  } as never);
-                }
+                await persist("cancelled");
                 send({ type: "cancelled" });
               } else {
                 const message = error instanceof Error ? error.message : "Generation failed";
                 console.error("[chat] generation failed:", message);
-                await db.from("messages").insert({
-                  chat_id: chatId,
-                  role: "assistant",
-                  content: answer,
-                  planning,
-                  thinking: thinking || null,
-                  model_ref: `${provider.name}:${modelRow.model_id}`,
-                  request_id: requestId,
-                  status: "error",
-                  error: message.slice(0, 800),
-                } as never);
+                await persist("error", message);
                 send({ type: "error", message: message.slice(0, 800) });
               }
             } finally {
+              activeRuns.delete(requestId);
               try {
                 controller.close();
               } catch {
@@ -396,6 +421,7 @@ ${skillBlock || "(none enabled)"}`;
             }
           },
         });
+
 
         return new Response(stream, {
           headers: {

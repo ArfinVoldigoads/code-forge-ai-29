@@ -29,7 +29,12 @@ export function ChatView({ chatId }: { chatId: string }) {
   const chatQuery = useQuery({
     queryKey: ["chat", chatId],
     queryFn: () => getChat({ data: { chatId } }),
+    // A run keeps going on the server even if we leave the chat — keep polling
+    // until the assistant message is no longer marked as streaming.
+    refetchInterval: (query) =>
+      (query.state.data?.messages ?? []).some((m) => m.status === "streaming") ? 1500 : false,
   });
+
   const modelsQuery = useQuery({ queryKey: ["models"], queryFn: () => listModels() });
 
   const refresh = useCallback(async () => {
@@ -107,7 +112,12 @@ export function ChatView({ chatId }: { chatId: string }) {
     }
   }
 
-  const messages = chatQuery.data?.messages ?? [];
+  const allMessages = chatQuery.data?.messages ?? [];
+  // While we stream locally, the live timeline already shows the run; hide the
+  // half-written DB row so nothing is rendered twice.
+  const messages = streaming ? allMessages.filter((m) => m.status !== "streaming") : allMessages;
+  const remoteRunning = !streaming && allMessages.some((m) => m.status === "streaming");
+
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -154,9 +164,17 @@ The agent thinks, explores the sandbox, edits code, runs it, fixes what breaks a
           )}
 
 
+          {remoteRunning && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              This task is still running in the background…
+            </div>
+          )}
+
           {live.error && (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {live.error}
+
             </p>
           )}
         </div>
