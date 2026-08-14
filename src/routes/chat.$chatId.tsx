@@ -47,6 +47,10 @@ function ChatPage() {
   const [showPanel, setShowPanel] = useState(false);
   const wide = useIsWide();
 
+  useEffect(() => {
+    if (wide) setShowPanel(true);
+  }, [wide]);
+
   return (
     <WorkspaceShell>
       <div className="relative flex min-h-0 flex-1">
