@@ -14,7 +14,7 @@ Given the conversation, produce a concise engineering plan in markdown with thes
 3. Approaches — at least two options with tradeoffs.
 4. Chosen approach — and why.
 5. Plan — numbered concrete implementation steps (use tools like write_file, run_command if available).
-6. Risks & edge cases.
+6. Risks & edge cases — for each risk, name the concrete fallback to try if it happens (never "report to user" as the first fallback).
 Keep it under 300 words. Do not write the final answer or full code here.`;
 
 function sse(event: StreamEvent): string {
