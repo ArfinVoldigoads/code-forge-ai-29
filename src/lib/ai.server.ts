@@ -28,7 +28,12 @@ export function resolveKey(provider: Pick<ProviderRow, "type" | "api_key" | "bas
 }
 
 export function baseUrlFor(provider: Pick<ProviderRow, "type" | "base_url">): string {
-  if (provider.base_url) return provider.base_url.replace(/\/+$/, "");
+  if (provider.base_url) {
+    return provider.base_url
+      .trim()
+      .replace(/\/(?:chat\/completions|models)\/?$/i, "")
+      .replace(/\/+$/, "");
+  }
   if (isLovableGateway(provider)) return LOVABLE_GATEWAY_URL;
   throw new Error("This provider needs a base URL, e.g. https://api.example.com/v1");
 }
@@ -45,6 +50,27 @@ function modelListUrls(baseURL: string): string[] {
   const urls = [`${baseURL}/models`];
   if (!/\/v\d+$/.test(baseURL)) urls.push(`${baseURL}/v1/models`);
   return urls;
+}
+
+function providerError(status: number, body: string): string {
+  try {
+    const parsed = JSON.parse(body) as {
+      detail?: string;
+      error?: { message?: string; type?: string; code?: string | number } | string;
+      message?: string;
+    };
+    const nested = typeof parsed.error === "object" ? parsed.error : null;
+    const message = nested?.message ?? parsed.message ?? parsed.detail ?? parsed.error;
+    if (typeof message === "string" && message.trim()) {
+      if (status === 401 || status === 403) {
+        return `Authentication failed (${status}): ${message.trim()}`;
+      }
+      return `HTTP ${status}: ${message.trim()}`;
+    }
+  } catch {
+    /* Use the response preview below when the provider does not return JSON. */
+  }
+  return `HTTP ${status}: ${body.trim() || "Empty response"}`;
 }
 
 /** Real connectivity probe against the provider's own OpenAI-compatible API. */
@@ -72,10 +98,10 @@ export async function probeProvider(
         }),
         signal: controller.signal,
       });
-      const body = (await res.text()).slice(0, 200);
+      const body = (await res.text()).slice(0, 500);
       return res.ok
         ? { ok: true, message: `Connected · ${modelId} responded` }
-        : { ok: false, message: `HTTP ${res.status}: ${body}` };
+        : { ok: false, message: providerError(res.status, body) };
     };
 
     // The Lovable AI Gateway does not expose /models — probe with a real call.
@@ -100,9 +126,9 @@ export async function probeProvider(
           message: count === null ? "Connection successful" : `Connected · ${count} models listed`,
         };
       }
-      last = `HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`;
+      last = providerError(res.status, (await res.text()).slice(0, 500));
       if (res.status === 401 || res.status === 403) {
-        return { ok: false, message: `${last} — check the API key.` };
+        return { ok: false, message: last };
       }
     }
     if (probeModelId) {
