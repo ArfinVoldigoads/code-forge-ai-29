@@ -1,19 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-const chatOnly = z.object({ chatId: z.string().uuid() });
-
-async function session(chatId: string) {
-  const { requireUnlocked } = await import("./gate.server");
-  await requireUnlocked();
-  const { getE2BKey, getSandboxForChat } = await import("./e2b.server");
-  const apiKey = await getE2BKey();
-  if (!apiKey) throw new Error("No E2B API key. Add one in Settings → E2B.");
-  return getSandboxForChat(chatId, apiKey);
-}
-
 export const sandboxStatus = createServerFn({ method: "GET" })
-  .inputValidator((d: unknown) => chatOnly.parse(d))
+  .inputValidator((d: unknown) => z.object({ chatId: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     const { requireUnlocked } = await import("./gate.server");
     await requireUnlocked();
@@ -35,9 +24,10 @@ export const sandboxStatus = createServerFn({ method: "GET" })
   });
 
 export const startSandbox = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => chatOnly.parse(d))
+  .inputValidator((d: unknown) => z.object({ chatId: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
-    const { sandbox } = await session(data.chatId);
+    const { getSandboxSession } = await import("./sandbox-ops.server");
+    const { sandbox } = await getSandboxSession(data.chatId);
     return { sandboxId: sandbox.sandboxId };
   });
 
@@ -46,7 +36,8 @@ export const listDir = createServerFn({ method: "POST" })
     z.object({ chatId: z.string().uuid(), path: z.string().default(".") }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { sandbox } = await session(data.chatId);
+    const { getSandboxSession } = await import("./sandbox-ops.server");
+    const { sandbox } = await getSandboxSession(data.chatId);
     const { resolvePath } = await import("./e2b.server");
     const entries = await sandbox.files.list(resolvePath(data.path));
     return {
@@ -64,7 +55,8 @@ export const readSandboxFile = createServerFn({ method: "POST" })
     z.object({ chatId: z.string().uuid(), path: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { sandbox } = await session(data.chatId);
+    const { getSandboxSession } = await import("./sandbox-ops.server");
+    const { sandbox } = await getSandboxSession(data.chatId);
     const { resolvePath } = await import("./e2b.server");
     const content = await sandbox.files.read(resolvePath(data.path));
     return { path: data.path, content: content.slice(0, 200_000) };
@@ -77,7 +69,8 @@ export const writeSandboxFile = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { sandbox } = await session(data.chatId);
+    const { getSandboxSession } = await import("./sandbox-ops.server");
+    const { sandbox } = await getSandboxSession(data.chatId);
     const { resolvePath } = await import("./e2b.server");
     await sandbox.files.write(resolvePath(data.path), data.content);
     return { ok: true as const };
@@ -95,7 +88,8 @@ export const runCli = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const started = Date.now();
-    const { sandbox, sessionId } = await session(data.chatId);
+    const { getSandboxSession } = await import("./sandbox-ops.server");
+    const { sandbox, sessionId } = await getSandboxSession(data.chatId);
     const {
       getE2BKey,
       isRecoverableShellFailure,
@@ -179,7 +173,8 @@ export const startPreview = createServerFn({ method: "POST" })
     z.object({ chatId: z.string().uuid(), port: z.number().int().min(1024).max(65535) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { sandbox } = await session(data.chatId);
+    const { getSandboxSession } = await import("./sandbox-ops.server");
+    const { sandbox } = await getSandboxSession(data.chatId);
     const { WORKDIR, shellCommand, runShell } = await import("./e2b.server");
     const port = data.port;
     const existing = await runShell(

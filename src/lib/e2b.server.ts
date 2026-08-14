@@ -35,6 +35,7 @@ export async function getSandboxForChat(chatId: string, apiKey: string): Promise
     .eq("chat_id", chatId)
     .eq("status", "running")
     .order("last_active_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (existing) {
