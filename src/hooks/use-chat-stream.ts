@@ -33,9 +33,21 @@ export function useChatStream(onFinish: () => void | Promise<void>) {
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
+  const runRef = useRef<{ chatId: string; requestId: string } | null>(null);
+
   const stop = useCallback(() => {
+    const run = runRef.current;
+    if (run) {
+      void fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...run, cancel: true }),
+        keepalive: true,
+      }).catch(() => {});
+    }
     abortRef.current?.abort();
   }, []);
+
 
   const reset = useCallback(() => setLive(EMPTY), []);
 
