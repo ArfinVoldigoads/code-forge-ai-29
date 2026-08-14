@@ -32,9 +32,43 @@ export const Route = createFileRoute("/chat/$chatId")({
 
 function ChatPage() {
   const { chatId } = Route.useParams();
+  const [showPanel, setShowPanel] = useState(false);
+
   return (
     <WorkspaceShell>
-      <ChatView key={chatId} chatId={chatId} />
+      <div className="relative flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <ChatView key={chatId} chatId={chatId} />
+        </div>
+
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={showPanel ? "Hide sandbox panel" : "Show sandbox panel"}
+          className="absolute right-3 top-3 z-10 h-8 w-8"
+          onClick={() => setShowPanel((v) => !v)}
+        >
+          {showPanel ? (
+            <PanelRightClose className="h-4 w-4" />
+          ) : (
+            <PanelRightOpen className="h-4 w-4" />
+          )}
+        </Button>
+
+        {showPanel && (
+          <aside className="hidden w-[26rem] shrink-0 flex-col border-l border-border lg:flex">
+            <SandboxPanel chatId={chatId} />
+          </aside>
+        )}
+
+        <Sheet open={showPanel} onOpenChange={setShowPanel}>
+          <SheetContent side="right" className="flex w-full max-w-full flex-col p-0 lg:hidden">
+            <SheetTitle className="sr-only">Sandbox</SheetTitle>
+            <SandboxPanel chatId={chatId} />
+          </SheetContent>
+        </Sheet>
+      </div>
     </WorkspaceShell>
   );
+
 }
