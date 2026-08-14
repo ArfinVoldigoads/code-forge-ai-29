@@ -222,21 +222,7 @@ ${skillBlock || "(none enabled)"}`;
             const events: StreamEvent[] = [];
 
             try {
-              // ---- planning phase (streamed live) ----
-              send({ type: "planning-start" });
-              const planStream = streamText({
-                model: buildModel(provider, modelRow.model_id),
-                system: PLANNING_PROMPT,
-                messages,
-                abortSignal: request.signal,
-              });
-              for await (const delta of planStream.textStream) {
-                planning += delta;
-                send({ type: "planning-update", text: delta });
-              }
-              send({ type: "planning-finish" });
-
-              // ---- answer phase (with sandbox tools when E2B is configured) ----
+              // ---- single autonomous loop: think → act → verify → repeat ----
               let tools: Record<string, unknown> | undefined;
               if (e2bKey) {
                 const { buildAgentTools } = await import("@/lib/agent-tools.server");
@@ -250,7 +236,7 @@ ${skillBlock || "(none enabled)"}`;
 
               const mainOptions = {
                 model: buildModel(provider, modelRow.model_id),
-                system: `${systemPrompt}\n\n## Plan agreed for this turn\n${planning}`,
+                system: systemPrompt,
                 messages,
                 abortSignal: request.signal,
                 ...(tools ? { tools, stopWhen: stepCountIs(120) } : {}),
@@ -258,9 +244,22 @@ ${skillBlock || "(none enabled)"}`;
               } as any;
               const main = streamText(mainOptions);
 
+              // Native reasoning (GPT-5/Gemini) renders as the same inline thought block
+              // as the `think` tool, so every model looks identical in the timeline.
+              let nativeThoughtId: string | null = null;
+              let nativeStartedAt = 0;
+              const closeNativeThought = () => {
+                if (!nativeThoughtId) return;
+                const end: StreamEvent = {
+                  type: "thought-end",
+                  id: nativeThoughtId,
+                  durationMs: Date.now() - nativeStartedAt,
+                };
+                send(end);
+                events.push(end);
+                nativeThoughtId = null;
+              };
 
-
-              let thinkingOpen = false;
               let segment = "";
               const flushSegment = () => {
                 if (segment.trim()) events.push({ type: "step-text", text: segment });
@@ -268,28 +267,45 @@ ${skillBlock || "(none enabled)"}`;
               };
               for await (const part of main.fullStream) {
                 if (part.type === "reasoning-delta") {
-                  if (!thinkingOpen) {
-                    thinkingOpen = true;
-                    send({ type: "thinking-start" });
+                  if (!nativeThoughtId) {
+                    nativeThoughtId = crypto.randomUUID();
+                    nativeStartedAt = Date.now();
+                    const start: StreamEvent = { type: "thought-start", id: nativeThoughtId };
+                    send(start);
+                    events.push(start);
                   }
                   thinking += part.text;
-                  send({ type: "thinking-update", text: part.text });
+                  const delta: StreamEvent = {
+                    type: "thought-delta",
+                    id: nativeThoughtId,
+                    text: part.text,
+                  };
+                  send(delta);
+                  events.push(delta);
                 } else if (part.type === "text-delta") {
-                  if (thinkingOpen) {
-                    thinkingOpen = false;
-                    send({ type: "thinking-finish" });
-                  }
+                  closeNativeThought();
                   answer += part.text;
                   segment += part.text;
                   send({ type: "assistant-delta", text: part.text });
                 } else if (part.type === "tool-call") {
+                  closeNativeThought();
                   flushSegment();
                 } else if (part.type === "error") {
                   throw part.error instanceof Error ? part.error : new Error(String(part.error));
                 }
               }
               flushSegment();
-              if (thinkingOpen) send({ type: "thinking-finish" });
+              closeNativeThought();
+
+              planning =
+                events
+                  .filter((e): e is Extract<StreamEvent, { type: "thought-delta" }> =>
+                    e.type === "thought-delta",
+                  )
+                  .map((e) => e.text)
+                  .join("\n\n")
+                  .slice(0, 4000) || "";
+
 
 
               const { data: saved } = await db
