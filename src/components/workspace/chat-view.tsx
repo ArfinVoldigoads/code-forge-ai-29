@@ -29,7 +29,12 @@ export function ChatView({ chatId }: { chatId: string }) {
   const chatQuery = useQuery({
     queryKey: ["chat", chatId],
     queryFn: () => getChat({ data: { chatId } }),
+    // A run keeps going on the server even if we leave the chat — keep polling
+    // until the assistant message is no longer marked as streaming.
+    refetchInterval: (query) =>
+      (query.state.data?.messages ?? []).some((m) => m.status === "streaming") ? 1500 : false,
   });
+
   const modelsQuery = useQuery({ queryKey: ["models"], queryFn: () => listModels() });
 
   const refresh = useCallback(async () => {
