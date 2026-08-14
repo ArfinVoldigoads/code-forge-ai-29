@@ -55,6 +55,8 @@ export function useChatStream(onFinish: () => void | Promise<void>) {
     async (chatId: string, requestId: string) => {
       const controller = new AbortController();
       abortRef.current = controller;
+      runRef.current = { chatId, requestId };
+
       setLive({ ...EMPTY, phase: "thinking" });
       setStreaming(true);
 
