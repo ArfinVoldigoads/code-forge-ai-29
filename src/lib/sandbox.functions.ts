@@ -96,33 +96,62 @@ export const runCli = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const started = Date.now();
     const { sandbox, sessionId } = await session(data.chatId);
-    const { resolvePath, WORKDIR, shellCommand } = await import("./e2b.server");
+    const { resolvePath, WORKDIR, runShell } = await import("./e2b.server");
     const { db } = await import("./db.server");
     const cwd = data.cwd ? resolvePath(data.cwd) : WORKDIR;
     const clip = (t: string) => (t.length > 20000 ? `${t.slice(0, 20000)}\n…truncated` : t);
-    try {
-      const result = await sandbox.commands.run(shellCommand(data.command), { cwd, timeoutMs: 180_000 });
-      const hint =
-        result.exitCode === 127
-          ? "\ncommand not found (exit 127) — install it first, e.g. `npm i -g <tool>` or `apt-get install -y <pkg>`."
-          : "";
-      const out = {
-        exitCode: result.exitCode,
-        stdout: clip(result.stdout),
-        stderr: clip(result.stderr + hint),
-      };
-      await db.from("command_outputs").insert({
-        sandbox_session_id: sessionId || null,
-        command: data.command,
-        stdout: out.stdout,
-        stderr: out.stderr,
-        exit_code: out.exitCode,
-      } as never);
-      return { ...out, durationMs: Date.now() - started };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { exitCode: 1, stdout: "", stderr: message, durationMs: Date.now() - started };
-    }
+    const result = await runShell(sandbox, data.command, { cwd, timeoutMs: 180_000 });
+    const hint =
+      result.exitCode === 127
+        ? "\ncommand not found (exit 127) — install it first, e.g. `npm i -g <tool>` or `apt-get install -y <pkg>`."
+        : "";
+    const out = {
+      exitCode: result.exitCode,
+      stdout: clip(result.stdout),
+      stderr: clip(result.stderr + hint),
+    };
+    const durationMs = Date.now() - started;
+    await db.from("command_outputs").insert({
+      chat_id: data.chatId,
+      source: "user",
+      duration_ms: durationMs,
+      sandbox_session_id: sessionId || null,
+      command: data.command,
+      stdout: out.stdout,
+      stderr: out.stderr,
+      exit_code: out.exitCode,
+    } as never);
+    return { ...out, durationMs };
+  });
+
+/** Unified console feed: commands run by you AND by the agent, newest last. */
+export const consoleFeed = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z.object({ chatId: z.string().uuid(), limit: z.number().int().min(1).max(200).default(60) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { requireUnlocked } = await import("./gate.server");
+    await requireUnlocked();
+    const { db } = await import("./db.server");
+    const { data: rows } = await db
+      .from("command_outputs")
+      .select("id, command, stdout, stderr, exit_code, duration_ms, source, created_at")
+      .eq("chat_id", data.chatId)
+      .order("created_at", { ascending: false })
+      .limit(data.limit);
+    return {
+      lines: (rows ?? [])
+        .map((r) => ({
+          id: r.id as string,
+          command: r.command as string,
+          output: [r.stdout, r.stderr].filter(Boolean).join("\n"),
+          exitCode: (r.exit_code ?? 0) as number,
+          ms: (r.duration_ms ?? 0) as number,
+          source: ((r as { source?: string }).source ?? "user") as string,
+          createdAt: r.created_at as string,
+        }))
+        .reverse(),
+    };
   });
 
 export const startPreview = createServerFn({ method: "POST" })
@@ -131,10 +160,11 @@ export const startPreview = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { sandbox } = await session(data.chatId);
-    const { WORKDIR, shellCommand } = await import("./e2b.server");
+    const { WORKDIR, shellCommand, runShell } = await import("./e2b.server");
     const port = data.port;
-    const existing = await sandbox.commands.run(
-      shellCommand(`curl -fsS --max-time 2 http://127.0.0.1:${port} >/dev/null`),
+    const existing = await runShell(
+      sandbox,
+      `curl -fsS --max-time 2 http://127.0.0.1:${port} >/dev/null`,
       { cwd: WORKDIR, timeoutMs: 5_000 },
     );
     if (existing.exitCode === 0) return { url: `https://${sandbox.getHost(port)}`, port };

@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  consoleFeed,
   listDir,
   readSandboxFile,
   runCli,
@@ -27,7 +28,14 @@ import {
   writeSandboxFile,
 } from "@/lib/sandbox.functions";
 
-type Line = { id: string; command: string; output: string; exitCode: number; ms: number };
+type Line = {
+  id: string;
+  command: string;
+  output: string;
+  exitCode: number;
+  ms: number;
+  source: string;
+};
 
 function joinPath(base: string, name: string) {
   return base === "." || base === "" ? name : `${base}/${name}`;
@@ -46,6 +54,7 @@ export function SandboxPanel({ chatId }: { chatId: string }) {
     refetchInterval: 15_000,
   });
 
+  const autoBooted = useRef(false);
   const boot = useMutation({
     mutationFn: () => startSandbox({ data: { chatId } }),
     onSuccess: async () => {
@@ -55,6 +64,20 @@ export function SandboxPanel({ chatId }: { chatId: string }) {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  useEffect(() => {
+    autoBooted.current = false;
+  }, [chatId]);
+
+  // Auto-start the sandbox for this chat, like a fresh workspace booting up.
+  useEffect(() => {
+    if (autoBooted.current) return;
+    const s = status.data;
+    if (!s || !s.hasKey || s.sandboxId) return;
+    autoBooted.current = true;
+    boot.mutate();
+  }, [status.data, boot]);
+
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -166,30 +189,24 @@ function PreviewTab({ chatId }: { chatId: string }) {
 }
 
 function ConsoleTab({ chatId }: { chatId: string }) {
+  const queryClient = useQueryClient();
   const [command, setCommand] = useState("");
-  const [lines, setLines] = useState<Line[]>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [cursor, setCursor] = useState(-1);
   const logRef = useRef<HTMLDivElement>(null);
 
+  const feed = useQuery({
+    queryKey: ["sandbox-console", chatId],
+    queryFn: () => consoleFeed({ data: { chatId, limit: 60 } }),
+    refetchInterval: 2500,
+    retry: false,
+  });
+  const lines: Line[] = feed.data?.lines ?? [];
+
   const exec = useMutation({
     mutationFn: (cmd: string) => runCli({ data: { chatId, command: cmd } }),
-    onSuccess: (res, cmd) =>
-      setLines((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          command: cmd,
-          output: [res.stdout, res.stderr].filter(Boolean).join("\n"),
-          exitCode: res.exitCode,
-          ms: res.durationMs,
-        },
-      ]),
-    onError: (e: Error, cmd) =>
-      setLines((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), command: cmd, output: e.message, exitCode: 1, ms: 0 },
-      ]),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["sandbox-console", chatId] }),
+    onError: (e: Error) => toast.error(e.message),
   });
 
   useEffect(() => {
@@ -214,12 +231,20 @@ function ConsoleTab({ chatId }: { chatId: string }) {
       >
         {lines.length === 0 && (
           <p className="text-muted-foreground">
-            Run shell commands inside the sandbox, e.g. <code>ls -la</code>, <code>npm test</code>.
+            Shared terminal — your commands and everything the agent runs show up here. Try{" "}
+            <code>ls -la</code> or <code>npm test</code>.
           </p>
         )}
         {lines.map((line) => (
           <div key={line.id} className="mb-2">
-            <div className="text-primary">$ {line.command}</div>
+            <div className="flex items-center gap-1.5">
+              {line.source === "agent" && (
+                <span className="rounded bg-primary/15 px-1 text-[9px] uppercase tracking-wide text-primary">
+                  agent
+                </span>
+              )}
+              <span className="text-primary">$ {line.command}</span>
+            </div>
             {line.output && (
               <pre className="whitespace-pre-wrap text-muted-foreground">{line.output}</pre>
             )}
@@ -230,10 +255,11 @@ function ConsoleTab({ chatId }: { chatId: string }) {
         ))}
         {exec.isPending && (
           <div className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" /> running…
+            <Loader2 className="h-3 w-3 animate-spin" /> running {exec.variables}…
           </div>
         )}
       </div>
+
 
       <div className="mt-2 flex items-center gap-2">
         <Input
