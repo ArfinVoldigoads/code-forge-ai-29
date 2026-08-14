@@ -156,6 +156,32 @@ export function isRecoverableShellFailure(result: ShellResult): boolean {
   return RECOVERABLE_SHELL_ERRORS.some((message) => detail.includes(message));
 }
 
+const DEAD_SANDBOX_ERRORS = [
+  "sandbox not running",
+  "sandbox is not running",
+  "sandbox was not found",
+  "sandbox timeout",
+  "failed to connect to sandbox",
+  "connection closed",
+  "session not found",
+  "not found: sandbox",
+  "502",
+  "503",
+  "econnreset",
+  "socket hang up",
+  "fetch failed",
+];
+
+/** True when an SDK call failed because the remote sandbox lease is gone. */
+export function isDeadSandboxError(error: unknown): boolean {
+  const message = (
+    error instanceof Error ? error.message : typeof error === "string" ? error : ""
+  ).toLowerCase();
+  if (!message) return false;
+  return DEAD_SANDBOX_ERRORS.some((needle) => message.includes(needle));
+}
+
+
 /** Stop stale sessions so the next lookup creates a clean sandbox. */
 export async function recreateSandboxForChat(chatId: string, apiKey: string): Promise<Session> {
   await db

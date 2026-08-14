@@ -5,6 +5,7 @@ import { db } from "@/lib/db.server";
 import {
   getChatEnv,
   getSandboxForChat,
+  isDeadSandboxError,
   isRecoverableShellFailure,
   recreateSandboxForChat,
   resolvePath,
@@ -60,6 +61,35 @@ export function buildAgentTools(ctx: Ctx) {
     }
     return session;
   };
+
+  /** Rebuild the sandbox and keep going when the lease died mid-operation. */
+  const respawn = async () => {
+    const fresh = await recreateSandboxForChat(ctx.chatId, ctx.apiKey);
+    session = fresh;
+    await syncEnvFile(fresh.sandbox, ctx.chatId).catch(() => []);
+    const notice: StreamEvent = {
+      type: "command-output",
+      id: "sandbox-recovery",
+      stream: "stderr",
+      text: `\n[agentkit] Sandbox lease lost — started a new sandbox (${fresh.sandbox.sandboxId}) and resumed.\n`,
+    };
+    ctx.send(notice);
+    ctx.record(notice);
+    return fresh;
+  };
+
+  /** Run a sandbox SDK call, transparently retrying once on a dead sandbox. */
+  const withSandbox = async <T>(fn: (sbx: Sandbox) => Promise<T>): Promise<T> => {
+    const active = await sandbox();
+    try {
+      return await fn(active.sandbox);
+    } catch (error) {
+      if (!isDeadSandboxError(error)) throw error;
+      const fresh = await respawn();
+      return fn(fresh.sandbox);
+    }
+  };
+
 
 
 
@@ -259,8 +289,7 @@ export function buildAgentTools(ctx: Ctx) {
       inputSchema: z.object({ path: z.string(), content: z.string() }),
       execute: async ({ path, content }) =>
         run("write_file", { path }, async () => {
-          const { sandbox: sbx } = await sandbox();
-          await sbx.files.write(resolvePath(path), content);
+          await withSandbox((sbx) => sbx.files.write(resolvePath(path), content));
           const change: StreamEvent = { type: "file-change", path, action: "write" };
           ctx.send(change);
           ctx.record(change);
@@ -278,8 +307,7 @@ export function buildAgentTools(ctx: Ctx) {
       }),
       execute: async ({ path, startLine, endLine }) =>
         run("read_file", { path, startLine: startLine ?? null, endLine: endLine ?? null }, async () => {
-          const { sandbox: sbx } = await sandbox();
-          const content = await sbx.files.read(resolvePath(path));
+          const content = await withSandbox((sbx) => sbx.files.read(resolvePath(path)));
           if (!startLine && !endLine) return { path, content: clip(content) };
           const lines = content.split("\n");
           const from = (startLine ?? 1) - 1;
@@ -304,15 +332,14 @@ export function buildAgentTools(ctx: Ctx) {
       inputSchema: z.object({ path: z.string(), find: z.string(), replace: z.string() }),
       execute: async ({ path, find, replace }) =>
         run("apply_patch", { path }, async () => {
-          const { sandbox: sbx } = await sandbox();
           const full = resolvePath(path);
-          const content = await sbx.files.read(full);
+          const content = await withSandbox((sbx) => sbx.files.read(full));
           const occurrences = content.split(find).length - 1;
           if (occurrences === 0) throw new Error("Snippet not found — read the file again.");
           if (occurrences > 1)
             throw new Error(`Snippet appears ${occurrences} times — include more context.`);
           const next = content.replace(find, replace);
-          await sbx.files.write(full, next);
+          await withSandbox((sbx) => sbx.files.write(full, next));
           const change: StreamEvent = { type: "file-change", path, action: "patch" };
           ctx.send(change);
           ctx.record(change);
@@ -325,10 +352,10 @@ export function buildAgentTools(ctx: Ctx) {
       inputSchema: z.object({ path: z.string().optional() }),
       execute: async ({ path }) =>
         run("list_files", { path: path ?? "." }, async () => {
-          const { sandbox: sbx } = await sandbox();
-          const entries = await sbx.files.list(resolvePath(path ?? "."));
+          const entries = await withSandbox((sbx) => sbx.files.list(resolvePath(path ?? ".")));
           return { entries: entries.map((e) => ({ name: e.name, type: e.type ?? "file" })) };
         }),
+
     }),
 
     project_tree: tool({
@@ -412,7 +439,6 @@ export function buildAgentTools(ctx: Ctx) {
       execute: async ({ port }) =>
         run("start_dev_server", { port: port ?? 5173 }, async () => {
           const p = port ?? 5173;
-          const { sandbox: sbx } = await sandbox();
           const { shellCommand } = await import("@/lib/e2b.server");
           const envs = await getChatEnv(ctx.chatId);
           const alive = await shell(`curl -fsS --max-time 2 http://127.0.0.1:${p} >/dev/null`, {
@@ -420,11 +446,13 @@ export function buildAgentTools(ctx: Ctx) {
           });
           if (alive.exitCode !== 0) {
             const command = `if [ -f package.json ]; then\n  if [ -f bun.lockb ] || [ -f bun.lock ]; then bun run dev -- --host 0.0.0.0 --port ${p};\n  elif [ -f pnpm-lock.yaml ]; then pnpm dev -- --host 0.0.0.0 --port ${p};\n  else npm run dev -- --host 0.0.0.0 --port ${p}; fi\nelif [ -f index.html ]; then python3 -m http.server ${p} --bind 0.0.0.0;\nelse echo 'No web project found' >&2; exit 1; fi`;
-            await sbx.commands.run(shellCommand(command), {
-              cwd: WORKDIR,
-              background: true,
-              ...(Object.keys(envs).length ? { envs } : {}),
-            });
+            await withSandbox((sbx) =>
+              sbx.commands.run(shellCommand(command), {
+                cwd: WORKDIR,
+                background: true,
+                ...(Object.keys(envs).length ? { envs } : {}),
+              }),
+            );
             const ready = await shell(
               `for i in $(seq 1 20); do curl -fsS --max-time 2 http://127.0.0.1:${p} >/dev/null && exit 0; sleep 1; done; exit 1`,
               { timeoutMs: 30_000 },
@@ -433,7 +461,9 @@ export function buildAgentTools(ctx: Ctx) {
               throw new Error(`Dev server did not become ready on port ${p}. Inspect its console output, fix the startup error, and retry.`);
             }
           }
-          return { url: `https://${sbx.getHost(p)}`, port: p, alreadyRunning: alive.exitCode === 0 };
+          const host = (await sandbox()).sandbox.getHost(p);
+          return { url: `https://${host}`, port: p, alreadyRunning: alive.exitCode === 0 };
+
         }),
     }),
 
@@ -464,8 +494,8 @@ export function buildAgentTools(ctx: Ctx) {
         run("screenshot", { port: port ?? 5173, path: path ?? "/" }, async (toolId) => {
           const p = port ?? 5173;
           const target = `http://127.0.0.1:${p}${path && path.startsWith("/") ? path : `/${path ?? ""}`}`;
-          const { sandbox: sbx } = await sandbox();
-          await sbx.setTimeout(900_000).catch(() => undefined);
+          await withSandbox((sbx) => sbx.setTimeout(900_000)).catch(() => undefined);
+
 
           const preview = await shell(
             `curl -fsS --max-time 5 ${JSON.stringify(target)} >/dev/null`,
@@ -500,9 +530,9 @@ export function buildAgentTools(ctx: Ctx) {
             throw new Error(`Screenshot browser failed: ${clip(shot.stderr || shot.stdout)}`);
           }
 
-          const bytes = (await sbx.files.read(`${SHOT_DIR}/shot.png`, {
-            format: "bytes",
-          })) as unknown as Uint8Array;
+          const bytes = (await withSandbox((sbx) =>
+            sbx.files.read(`${SHOT_DIR}/shot.png`, { format: "bytes" }),
+          )) as unknown as Uint8Array;
 
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
           const key = `${ctx.chatId}/${Date.now()}.png`;
