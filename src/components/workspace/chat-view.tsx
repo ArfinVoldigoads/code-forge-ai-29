@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +22,7 @@ function uuid() {
 
 export function ChatView({ chatId }: { chatId: string }) {
   const queryClient = useQueryClient();
-  const [input, setInput] = useState("");
+  
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
 
@@ -65,14 +65,13 @@ export function ChatView({ chatId }: { chatId: string }) {
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
-  async function send() {
-    const content = input.trim();
+  async function send(raw: string) {
+    const content = raw.trim();
     if (!content || streaming) return;
     if (!activeModelId) {
       toast.error("Add a model in Settings → Models first.");
       return;
     }
-    setInput("");
     atBottomRef.current = true;
     try {
       if (!chatQuery.data?.chat.modelId) {
@@ -164,8 +163,6 @@ The agent thinks, explores the sandbox, edits code, runs it, fixes what breaks a
       </div>
 
       <Composer
-        value={input}
-        onChange={setInput}
         onSend={send}
         onStop={stop}
         streaming={streaming}

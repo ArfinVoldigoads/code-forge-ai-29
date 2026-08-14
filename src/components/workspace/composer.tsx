@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Send, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,8 +12,6 @@ import {
 import type { ModelDTO } from "@/lib/types";
 
 export function Composer({
-  value,
-  onChange,
   onSend,
   onStop,
   streaming,
@@ -22,9 +20,7 @@ export function Composer({
   onModelChange,
   disabled,
 }: {
-  value: string;
-  onChange: (v: string) => void;
-  onSend: () => void;
+  onSend: (content: string) => void;
   onStop: () => void;
   streaming: boolean;
   models: ModelDTO[];
@@ -33,10 +29,22 @@ export function Composer({
   disabled?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  // Local draft state: typing must not re-render the message list / live timeline.
+  const [value, setValue] = useState("");
+  const [canSend, setCanSend] = useState(false);
 
   useEffect(() => {
     if (!streaming) ref.current?.focus();
   }, [streaming]);
+
+  function submit() {
+    const content = value.trim();
+    if (!content || streaming) return;
+    setValue("");
+    setCanSend(false);
+    onSend(content);
+  }
+
 
   return (
     <div className="safe-bottom border-t border-border bg-background/95 px-3 pt-3 pb-3 backdrop-blur">
@@ -44,11 +52,16 @@ export function Composer({
         <Textarea
           ref={ref}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setValue(next);
+            const has = next.trim().length > 0;
+            if (has !== canSend) setCanSend(has);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !streaming) {
               e.preventDefault();
-              onSend();
+              submit();
             }
           }}
           placeholder="Describe the task. Enter to send, Shift+Enter for a new line."
@@ -79,7 +92,7 @@ export function Composer({
               <Square className="mr-1.5 h-3.5 w-3.5" /> Stop
             </Button>
           ) : (
-            <Button onClick={onSend} disabled={disabled || !value.trim()} className="h-9">
+            <Button onClick={submit} disabled={disabled || !canSend} className="h-9">
               <Send className="mr-1.5 h-3.5 w-3.5" /> Send
             </Button>
           )}
