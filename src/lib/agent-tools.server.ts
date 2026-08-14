@@ -116,7 +116,8 @@ export function buildAgentTools(ctx: Ctx) {
           const { sandbox: sbx, sessionId } = await sandbox();
           let stdout = "";
           let stderr = "";
-          const result = await sbx.commands.run(command, {
+          const { shellCommand } = await import("@/lib/e2b.server");
+          const result = await sbx.commands.run(shellCommand(command), {
             cwd: WORKDIR,
             timeoutMs: Math.min((timeoutSeconds ?? 120) * 1000, 300_000),
             onStdout: (text: string) => {
