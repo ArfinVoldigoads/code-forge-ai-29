@@ -439,7 +439,6 @@ export function buildAgentTools(ctx: Ctx) {
       execute: async ({ port }) =>
         run("start_dev_server", { port: port ?? 5173 }, async () => {
           const p = port ?? 5173;
-          const { sandbox: sbx } = await sandbox();
           const { shellCommand } = await import("@/lib/e2b.server");
           const envs = await getChatEnv(ctx.chatId);
           const alive = await shell(`curl -fsS --max-time 2 http://127.0.0.1:${p} >/dev/null`, {
@@ -447,11 +446,13 @@ export function buildAgentTools(ctx: Ctx) {
           });
           if (alive.exitCode !== 0) {
             const command = `if [ -f package.json ]; then\n  if [ -f bun.lockb ] || [ -f bun.lock ]; then bun run dev -- --host 0.0.0.0 --port ${p};\n  elif [ -f pnpm-lock.yaml ]; then pnpm dev -- --host 0.0.0.0 --port ${p};\n  else npm run dev -- --host 0.0.0.0 --port ${p}; fi\nelif [ -f index.html ]; then python3 -m http.server ${p} --bind 0.0.0.0;\nelse echo 'No web project found' >&2; exit 1; fi`;
-            await sbx.commands.run(shellCommand(command), {
-              cwd: WORKDIR,
-              background: true,
-              ...(Object.keys(envs).length ? { envs } : {}),
-            });
+            await withSandbox((sbx) =>
+              sbx.commands.run(shellCommand(command), {
+                cwd: WORKDIR,
+                background: true,
+                ...(Object.keys(envs).length ? { envs } : {}),
+              }),
+            );
             const ready = await shell(
               `for i in $(seq 1 20); do curl -fsS --max-time 2 http://127.0.0.1:${p} >/dev/null && exit 0; sleep 1; done; exit 1`,
               { timeoutMs: 30_000 },
@@ -460,7 +461,9 @@ export function buildAgentTools(ctx: Ctx) {
               throw new Error(`Dev server did not become ready on port ${p}. Inspect its console output, fix the startup error, and retry.`);
             }
           }
-          return { url: `https://${sbx.getHost(p)}`, port: p, alreadyRunning: alive.exitCode === 0 };
+          const host = (await sandbox()).sandbox.getHost(p);
+          return { url: `https://${host}`, port: p, alreadyRunning: alive.exitCode === 0 };
+
         }),
     }),
 
