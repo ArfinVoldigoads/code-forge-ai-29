@@ -47,6 +47,8 @@ export type ChatDTO = {
 
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
+export type SecretRequestKey = { name: string; description?: string };
+
 export type StreamEvent =
   | { type: "planning-start" }
   | { type: "planning-update"; text: string }
@@ -60,6 +62,9 @@ export type StreamEvent =
   | { type: "command-output"; id: string; stream: "stdout" | "stderr"; text: string }
   | { type: "file-change"; path: string; action: string }
   | { type: "test-result"; name: string; passed: boolean; detail?: string }
+  | { type: "step-text"; text: string }
+  | { type: "image"; id: string; url: string; caption?: string }
+  | { type: "secret-request"; id: string; reason: string; keys: SecretRequestKey[] }
   | { type: "assistant-delta"; text: string }
   | { type: "assistant-finish"; messageId: string }
   | { type: "error"; message: string }
@@ -74,6 +79,14 @@ export type ToolEventState = {
   logs: string[];
   status: "running" | "done" | "error";
 };
+
+/** One ordered block of the assistant turn: narration, an action, an image, a form. */
+export type TimelineBlock =
+  | { kind: "text"; id: string; text: string }
+  | { kind: "tool"; id: string; tool: ToolEventState }
+  | { kind: "image"; id: string; url: string; caption?: string }
+  | { kind: "secret"; id: string; reason: string; keys: SecretRequestKey[] };
+
 
 export type MessageDTO = {
   id: string;

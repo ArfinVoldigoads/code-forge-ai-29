@@ -17,6 +17,7 @@ import { Route as ChatChatIdRouteImport } from './routes/chat.$chatId'
 import { Route as SettingsE2bRouteImport } from './routes/settings.e2b'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
+import { Route as SettingsSearchRouteImport } from './routes/settings.search'
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
 
 const IndexRoute = IndexRouteImport.update({
@@ -59,6 +60,11 @@ const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
   path: '/providers',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSearchRoute = SettingsSearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSkillsRoute = SettingsSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
@@ -74,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/settings/e2b': typeof SettingsE2bRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/search': typeof SettingsSearchRoute
   '/settings/skills': typeof SettingsSkillsRoute
 }
 export interface FileRoutesByTo {
@@ -85,6 +92,7 @@ export interface FileRoutesByTo {
   '/settings/e2b': typeof SettingsE2bRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/search': typeof SettingsSearchRoute
   '/settings/skills': typeof SettingsSkillsRoute
 }
 export interface FileRoutesById {
@@ -97,6 +105,7 @@ export interface FileRoutesById {
   '/settings/e2b': typeof SettingsE2bRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/search': typeof SettingsSearchRoute
   '/settings/skills': typeof SettingsSkillsRoute
 }
 export interface FileRouteTypes {
@@ -110,6 +119,7 @@ export interface FileRouteTypes {
     | '/settings/e2b'
     | '/settings/models'
     | '/settings/providers'
+    | '/settings/search'
     | '/settings/skills'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -121,6 +131,7 @@ export interface FileRouteTypes {
     | '/settings/e2b'
     | '/settings/models'
     | '/settings/providers'
+    | '/settings/search'
     | '/settings/skills'
   id:
     | '__root__'
@@ -132,6 +143,7 @@ export interface FileRouteTypes {
     | '/settings/e2b'
     | '/settings/models'
     | '/settings/providers'
+    | '/settings/search'
     | '/settings/skills'
   fileRoutesById: FileRoutesById
 }
@@ -201,6 +213,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsProvidersRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/search': {
+      id: '/settings/search'
+      path: '/search'
+      fullPath: '/settings/search'
+      preLoaderRoute: typeof SettingsSearchRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/skills': {
       id: '/settings/skills'
       path: '/skills'
@@ -215,6 +234,7 @@ interface SettingsRouteChildren {
   SettingsE2bRoute: typeof SettingsE2bRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
+  SettingsSearchRoute: typeof SettingsSearchRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
 }
 
@@ -222,6 +242,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsE2bRoute: SettingsE2bRoute,
   SettingsModelsRoute: SettingsModelsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
+  SettingsSearchRoute: SettingsSearchRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
 }
 

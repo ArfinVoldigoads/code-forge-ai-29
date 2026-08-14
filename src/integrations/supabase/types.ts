@@ -410,6 +410,47 @@ export type Database = {
           },
         ]
       }
+      project_secrets: {
+        Row: {
+          chat_id: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          status: string
+          updated_at: string
+          value: string | null
+        }
+        Insert: {
+          chat_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          status?: string
+          updated_at?: string
+          value?: string | null
+        }
+        Update: {
+          chat_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          status?: string
+          updated_at?: string
+          value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_secrets_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       providers: {
         Row: {
           api_key: string | null

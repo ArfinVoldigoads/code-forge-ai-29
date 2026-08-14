@@ -124,19 +124,38 @@ You reason first, then act. Be precise, concrete and honest about limitations.
 Never reveal API keys, tokens, or environment variable values.
 Format code with fenced blocks that include the language.
 
+## How to work (interleaved)
+Work in short cycles: write one or two sentences saying what you are about to do, call the tool,
+then react to the real result in the next sentences, then act again. Never dump one long answer
+at the end — narrate as you go, in between tool calls.
+
 ## Tool integrity rules
 - Tool results exist only when you actually call a provided tool in this turn. Never invent, quote, or imply command output that is not returned by a tool call.
 - For coding, debugging, file inspection, build, test, network checks, or any request about the sandbox, you MUST use the sandbox tools instead of narrating hypothetical commands.
-- Inspect existing files before editing. After changes, run the relevant build or tests and report only the real result.
-- For web applications, finish by starting the development server on host 0.0.0.0 and port 5173 in the background so the Preview tab can display the result.
+- Explore before you edit: project_tree, search_files/glob_files, then read_file. Prefer apply_patch over rewriting whole files.
+- After changes, run the relevant build or tests and report only the real result.
 - If a tool fails or the selected model/provider cannot call tools, say so directly. Never fabricate success.
 - Keep acting until the task is implemented and verified; do not stop after merely proposing steps.
+
+## Verifying web apps yourself
+- Start the app with start_dev_server (it binds 0.0.0.0 and returns the public preview URL).
+- Then call check_preview, and call screenshot to actually look at the rendered page and read console errors.
+- If the screenshot or console shows a problem, fix it and screenshot again before claiming success.
+
+## Research
+- Use web_search for current docs, library versions, or unfamiliar error messages, then fetch_url to read the best source. Cite the URLs you used.
+
+## Skills
+- Use list_skills / read_skill to load workspace playbooks before starting a task that matches one.
+
+## Secrets and env
+- If the task needs an API key or env value, call request_secret with the exact env var names and a short reason. A secure form appears in the chat; stop and wait for the user.
+- Stored secrets are injected automatically as environment variables into every command and mirrored to .env. Use list_secrets to see which names exist. Never print their values.
 
 ## Sandbox
 ${
   e2bKey
-    ? `A real E2B Linux sandbox is connected at /home/user/project. The tools write_file, read_file,
-list_files and run_command are active. Use them whenever the request involves code or execution.
+    ? `A real E2B Linux sandbox is connected at /home/user/project. All sandbox tools are active.
 Every factual claim about files, commands, tests, networking, or runtime behavior must be backed by a tool result from this turn.`
     : `No sandbox is configured, so you cannot execute code. Answer with code blocks and tell the user
 they can enable execution by adding an E2B API key in Settings → E2B.`
@@ -144,6 +163,7 @@ they can enable execution by adding an E2B API key in Settings → E2B.`
 
 ## Active skills
 ${skillBlock || "(none enabled)"}`;
+
 
         const messages = (history ?? []).map((m) => ({
           role: m.role as "user" | "assistant" | "system",
@@ -212,6 +232,11 @@ ${skillBlock || "(none enabled)"}`;
 
 
               let thinkingOpen = false;
+              let segment = "";
+              const flushSegment = () => {
+                if (segment.trim()) events.push({ type: "step-text", text: segment });
+                segment = "";
+              };
               for await (const part of main.fullStream) {
                 if (part.type === "reasoning-delta") {
                   if (!thinkingOpen) {
@@ -226,12 +251,17 @@ ${skillBlock || "(none enabled)"}`;
                     send({ type: "thinking-finish" });
                   }
                   answer += part.text;
+                  segment += part.text;
                   send({ type: "assistant-delta", text: part.text });
+                } else if (part.type === "tool-call") {
+                  flushSegment();
                 } else if (part.type === "error") {
                   throw part.error instanceof Error ? part.error : new Error(String(part.error));
                 }
               }
+              flushSegment();
               if (thinkingOpen) send({ type: "thinking-finish" });
+
 
               const { data: saved } = await db
                 .from("messages")

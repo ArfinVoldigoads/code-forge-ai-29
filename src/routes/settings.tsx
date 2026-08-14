@@ -7,8 +7,10 @@ const TABS = [
   { to: "/settings/providers", label: "Providers" },
   { to: "/settings/models", label: "Models" },
   { to: "/settings/skills", label: "Skills" },
+  { to: "/settings/search", label: "Search" },
   { to: "/settings/e2b", label: "E2B" },
 ] as const;
+
 
 export const Route = createFileRoute("/settings")({
   beforeLoad: async ({ location }) => {

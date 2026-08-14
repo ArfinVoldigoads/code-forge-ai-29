@@ -5,18 +5,38 @@ import type { Json, StreamEvent, ToolEventState } from "@/lib/types";
 const LABEL: Record<string, string> = {
   write_file: "Writing file",
   read_file: "Reading file",
+  apply_patch: "Editing file",
   list_files: "Listing files",
+  project_tree: "Exploring project",
+  search_files: "Searching code",
+  glob_files: "Finding files",
+  delete_path: "Deleting",
   run_command: "Running command",
+  start_dev_server: "Starting dev server",
+  check_preview: "Checking preview",
+  screenshot: "Taking screenshot",
+  web_search: "Searching the web",
+  fetch_url: "Reading page",
+  list_skills: "Listing skills",
+  read_skill: "Reading skill",
+  list_secrets: "Checking secrets",
+  request_secret: "Requesting secrets",
 };
 
 function summarize(name: string, input: Json): string {
   const obj = (input ?? {}) as Record<string, unknown>;
   if (name === "run_command") return String(obj["command"] ?? "");
+  if (typeof obj["query"] === "string") return obj["query"];
+  if (typeof obj["url"] === "string") return obj["url"];
   if (typeof obj["path"] === "string") return obj["path"];
+  if (typeof obj["pattern"] === "string") return obj["pattern"];
+  if (typeof obj["slug"] === "string") return obj["slug"];
+  if (typeof obj["port"] === "number") return `:${obj["port"]}`;
   return "";
 }
 
-function ToolRow({ tool }: { tool: ToolEventState }) {
+
+export function ToolRow({ tool }: { tool: ToolEventState }) {
   const [open, setOpen] = useState(false);
   const detail = tool.logs.join("") || JSON.stringify(tool.output ?? {}, null, 2);
 
