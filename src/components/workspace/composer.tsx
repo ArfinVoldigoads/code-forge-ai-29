@@ -52,11 +52,16 @@ export function Composer({
         <Textarea
           ref={ref}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setValue(next);
+            const has = next.trim().length > 0;
+            if (has !== canSend) setCanSend(has);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !streaming) {
               e.preventDefault();
-              onSend();
+              submit();
             }
           }}
           placeholder="Describe the task. Enter to send, Shift+Enter for a new line."
@@ -87,7 +92,7 @@ export function Composer({
               <Square className="mr-1.5 h-3.5 w-3.5" /> Stop
             </Button>
           ) : (
-            <Button onClick={onSend} disabled={disabled || !value.trim()} className="h-9">
+            <Button onClick={submit} disabled={disabled || !canSend} className="h-9">
               <Send className="mr-1.5 h-3.5 w-3.5" /> Send
             </Button>
           )}
