@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { WorkspaceShell } from "@/components/workspace/shell";
@@ -85,7 +85,4 @@ function ChatPage() {
       </div>
     </WorkspaceShell>
   );
-}
-
-
 }
