@@ -121,17 +121,44 @@ export async function testIntegrationCredentials(
     if (scripts.ok && scriptsJson.success) {
       return {
         ok: true,
-        message: `Connected to account ${value.extra} (Workers access verified; token has no Account Settings · Read permission, so the account name is unavailable).`,
+        message: `Connected to account ${value.extra} (Workers access verified).`,
         account: value.extra,
       };
     }
+
+    // Last resort: some tokens can only list memberships/accounts.
+    const list = await fetch("https://api.cloudflare.com/client/v4/accounts", {
+      headers: authHeaders,
+      signal: AbortSignal.timeout(20_000),
+    });
+    const listJson = (await list.json().catch(() => ({}))) as {
+      success?: boolean;
+      result?: { id?: string; name?: string }[];
+    };
+    if (list.ok && listJson.success) {
+      const match = (listJson.result ?? []).find((a) => a.id === value.extra);
+      if (match) {
+        const name = match.name ?? value.extra;
+        return { ok: true, message: `Connected to ${name}`, account: name };
+      }
+      const ids = (listJson.result ?? []).map((a) => a.id).filter(Boolean);
+      if (ids.length) {
+        return {
+          ok: false,
+          message: `This token belongs to a different account. Accounts it can access: ${ids.join(", ")}. Use one of those as the Account ID.`,
+          account: null,
+        };
+      }
+    }
+
     return {
       ok: false,
       message:
         scriptsJson.errors?.[0]?.message ??
-        `Token valid, but the Account ID was rejected (accounts HTTP ${acc.status}, workers HTTP ${scripts.status}). Recreate the token with Account · Workers Scripts · Edit for this account.`,
+        `Token valid, but the Account ID was rejected (accounts HTTP ${acc.status}, workers HTTP ${scripts.status}).`,
       account: null,
     };
+
 
   } catch (e) {
     return {
