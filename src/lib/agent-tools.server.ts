@@ -530,9 +530,9 @@ export function buildAgentTools(ctx: Ctx) {
             throw new Error(`Screenshot browser failed: ${clip(shot.stderr || shot.stdout)}`);
           }
 
-          const bytes = (await sbx.files.read(`${SHOT_DIR}/shot.png`, {
-            format: "bytes",
-          })) as unknown as Uint8Array;
+          const bytes = (await withSandbox((sbx) =>
+            sbx.files.read(`${SHOT_DIR}/shot.png`, { format: "bytes" }),
+          )) as unknown as Uint8Array;
 
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
           const key = `${ctx.chatId}/${Date.now()}.png`;
