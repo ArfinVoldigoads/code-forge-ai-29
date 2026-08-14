@@ -37,6 +37,24 @@ export const startSandbox = createServerFn({ method: "POST" })
     return { sandboxId: sandbox.sandboxId };
   });
 
+/** Keep the chat's sandbox lease alive while the workspace is open. */
+export const heartbeatSandbox = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ chatId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireUnlocked } = await import("./gate.server");
+    await requireUnlocked();
+    const { getE2BKey, getSandboxForChat } = await import("./e2b.server");
+    const apiKey = await getE2BKey();
+    if (!apiKey) return { alive: false, sandboxId: null };
+    try {
+      const { sandbox } = await getSandboxForChat(data.chatId, apiKey);
+      return { alive: true, sandboxId: sandbox.sandboxId };
+    } catch {
+      return { alive: false, sandboxId: null };
+    }
+  });
+
+
 export const listDir = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({ chatId: z.string().uuid(), path: z.string().default(".") }).parse(d),
