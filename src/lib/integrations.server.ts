@@ -94,18 +94,45 @@ export async function testIntegrationCredentials(
     if (!value.extra) {
       return { ok: false, message: "Token is valid but Account ID is missing.", account: null };
     }
+    const authHeaders = { authorization: `Bearer ${value.token}` };
+    // Some Workers tokens lack "Account Settings · Read", so GET /accounts/{id}
+    // 403s even though the account is fine. Fall back to a Workers-scoped probe.
     const acc = await fetch(`https://api.cloudflare.com/client/v4/accounts/${value.extra}`, {
-      headers: { authorization: `Bearer ${value.token}` },
+      headers: authHeaders,
       signal: AbortSignal.timeout(20_000),
     });
     const accJson = (await acc.json().catch(() => ({}))) as {
       success?: boolean;
       result?: { name?: string };
     };
-    const name = accJson.result?.name ?? value.extra;
-    return acc.ok && accJson.success
-      ? { ok: true, message: `Connected to ${name}`, account: name }
-      : { ok: false, message: "Token valid, but the Account ID was rejected.", account: null };
+    if (acc.ok && accJson.success) {
+      const name = accJson.result?.name ?? value.extra;
+      return { ok: true, message: `Connected to ${name}`, account: name };
+    }
+
+    const scripts = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${value.extra}/workers/scripts`,
+      { headers: authHeaders, signal: AbortSignal.timeout(20_000) },
+    );
+    const scriptsJson = (await scripts.json().catch(() => ({}))) as {
+      success?: boolean;
+      errors?: { message?: string }[];
+    };
+    if (scripts.ok && scriptsJson.success) {
+      return {
+        ok: true,
+        message: `Connected to account ${value.extra} (Workers access verified; token has no Account Settings · Read permission, so the account name is unavailable).`,
+        account: value.extra,
+      };
+    }
+    return {
+      ok: false,
+      message:
+        scriptsJson.errors?.[0]?.message ??
+        `Token valid, but the Account ID was rejected (accounts HTTP ${acc.status}, workers HTTP ${scripts.status}). Recreate the token with Account · Workers Scripts · Edit for this account.`,
+      account: null,
+    };
+
   } catch (e) {
     return {
       ok: false,
