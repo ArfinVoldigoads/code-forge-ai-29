@@ -116,3 +116,16 @@ export const runCli = createServerFn({ method: "POST" })
       return { exitCode: 1, stdout: "", stderr: message, durationMs: Date.now() - started };
     }
   });
+
+export const startPreview = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z.object({ chatId: z.string().uuid(), port: z.number().int().min(1024).max(65535) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { sandbox } = await session(data.chatId);
+    const { WORKDIR } = await import("./e2b.server");
+    const port = data.port;
+    const command = `if [ -f package.json ]; then\n  if [ -f bun.lockb ] || [ -f bun.lock ]; then bun run dev -- --host 0.0.0.0 --port ${port};\n  elif [ -f pnpm-lock.yaml ]; then pnpm dev -- --host 0.0.0.0 --port ${port};\n  else npm run dev -- --host 0.0.0.0 --port ${port}; fi\nelif [ -f index.html ]; then python3 -m http.server ${port} --bind 0.0.0.0;\nelse echo 'No web project found. Ask the agent to create one first.' >&2; exit 1; fi`;
+    await sandbox.commands.run(command, { cwd: WORKDIR, background: true });
+    return { url: `https://${sandbox.getHost(port)}`, port };
+  });
