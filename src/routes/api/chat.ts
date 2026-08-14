@@ -14,7 +14,7 @@ Given the conversation, produce a concise engineering plan in markdown with thes
 3. Approaches — at least two options with tradeoffs.
 4. Chosen approach — and why.
 5. Plan — numbered concrete implementation steps (use tools like write_file, run_command if available).
-6. Risks & edge cases.
+6. Risks & edge cases — for each risk, name the concrete fallback to try if it happens (never "report to user" as the first fallback).
 Keep it under 300 words. Do not write the final answer or full code here.`;
 
 function sse(event: StreamEvent): string {
@@ -140,6 +140,15 @@ at the end — narrate as you go, in between tool calls.
 - Keep acting until the task is implemented and verified; do not stop after merely proposing steps.
 - Never start a persistent process with run_command plus '&', nohup, or a shell background job; that keeps command streams open and times out. Use start_dev_server for previews.
 
+## Persistence rules (do not give up)
+- An error is a data point, not a conclusion. Never end your turn with "it failed" as the outcome while untried options remain.
+- On any failure you MUST attempt at least 3 materially different fixes before reporting a blocker. Repeating the same command counts as zero attempts.
+- Escalation ladder for a failing approach: (1) read the real error/exit code and stderr, (2) inspect the relevant file/response with read_file, run_command or fetch_url, (3) change the technique — different library, different flag, different parser, different endpoint, (4) web_search the exact error string or the target's docs and apply what you find, (5) only then report.
+- Scraping/network specifics: if a fetch is blocked or empty, try in order — different user-agent and headers, follow redirects, plain HTTP client (curl/requests) vs library, the site's JSON/API endpoint or sitemap/RSS, a rendered fetch via the headless browser already installed for screenshots, then a search-engine cache/alternative source. Log which ones you tried.
+- Missing dependency, tool or binary is never a stopping point: install it (npm/pip/apt-get) and continue.
+- Do not ask the user for permission to keep trying, and do not ask questions you can answer with a tool.
+- When you truly stop, list exactly what you attempted, the real error for each, and the single specific thing you need from the user.
+
 ## Verifying web apps yourself
 - Start the app with start_dev_server (it binds 0.0.0.0 and returns the public preview URL).
 - Use the exact port returned by start_dev_server for check_preview and screenshot. Never guess port 3000.
@@ -228,7 +237,7 @@ ${skillBlock || "(none enabled)"}`;
                 system: `${systemPrompt}\n\n## Plan agreed for this turn\n${planning}`,
                 messages,
                 abortSignal: request.signal,
-                ...(tools ? { tools, stopWhen: stepCountIs(50) } : {}),
+                ...(tools ? { tools, stopWhen: stepCountIs(120) } : {}),
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
               } as any;
               const main = streamText(mainOptions);
