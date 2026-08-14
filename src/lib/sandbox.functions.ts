@@ -96,13 +96,21 @@ export const runCli = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const started = Date.now();
     const { sandbox, sessionId } = await session(data.chatId);
-    const { resolvePath, WORKDIR } = await import("./e2b.server");
+    const { resolvePath, WORKDIR, shellCommand } = await import("./e2b.server");
     const { db } = await import("./db.server");
     const cwd = data.cwd ? resolvePath(data.cwd) : WORKDIR;
     const clip = (t: string) => (t.length > 20000 ? `${t.slice(0, 20000)}\n…truncated` : t);
     try {
-      const result = await sandbox.commands.run(data.command, { cwd, timeoutMs: 180_000 });
-      const out = { exitCode: result.exitCode, stdout: clip(result.stdout), stderr: clip(result.stderr) };
+      const result = await sandbox.commands.run(shellCommand(data.command), { cwd, timeoutMs: 180_000 });
+      const hint =
+        result.exitCode === 127
+          ? "\ncommand not found (exit 127) — install it first, e.g. `npm i -g <tool>` or `apt-get install -y <pkg>`."
+          : "";
+      const out = {
+        exitCode: result.exitCode,
+        stdout: clip(result.stdout),
+        stderr: clip(result.stderr + hint),
+      };
       await db.from("command_outputs").insert({
         sandbox_session_id: sessionId || null,
         command: data.command,
