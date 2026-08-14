@@ -5,6 +5,7 @@ import { db } from "@/lib/db.server";
 import {
   getChatEnv,
   getSandboxForChat,
+  isDeadSandboxError,
   isRecoverableShellFailure,
   recreateSandboxForChat,
   resolvePath,
