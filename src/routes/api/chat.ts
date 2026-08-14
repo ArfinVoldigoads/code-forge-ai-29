@@ -5,7 +5,13 @@ import type { StreamEvent } from "@/lib/types";
 const bodySchema = z.object({
   chatId: z.string().uuid(),
   requestId: z.string().uuid(),
+  cancel: z.boolean().optional(),
 });
+
+// Runs keep going even when the browser navigates away or the tab closes.
+// Only an explicit cancel request aborts them.
+const activeRuns = new Map<string, AbortController>();
+
 
 const THINKING_RULES = `## Thinking protocol (mandatory, repeated)
 - You have a \`think\` tool. Calling it produces a private "Thought for Ns" block in the timeline.
