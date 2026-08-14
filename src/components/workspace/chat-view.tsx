@@ -90,6 +90,24 @@ export function ChatView({ chatId }: { chatId: string }) {
     }
   }
 
+  const sendRef = useRef(send);
+  sendRef.current = send;
+
+  // When the user fills the secret form the agent asked for, resume the run
+  // automatically — no extra message typing required.
+  useEffect(() => {
+    function onSecretsSaved(event: Event) {
+      const detail = (event as CustomEvent<{ chatId: string; names: string[] }>).detail;
+      if (!detail || detail.chatId !== chatId) return;
+      const names = detail.names.length ? detail.names.join(", ") : "the requested secrets";
+      void sendRef.current(
+        `I saved ${names} in the environment. Continue the task from where you stopped.`,
+      );
+    }
+    window.addEventListener("agentkit:secrets-saved", onSecretsSaved);
+    return () => window.removeEventListener("agentkit:secrets-saved", onSecretsSaved);
+  }, [chatId]);
+
   async function retry(messageId: string) {
     if (streaming) return;
     try {
