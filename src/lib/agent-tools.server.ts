@@ -27,6 +27,20 @@ const clip = (text: string) =>
 
 const SHOT_DIR = "/home/user/.agentkit";
 
+/** Strip a credential out of any command output before it reaches the model or UI. */
+const redact = (text: string, ...secrets: (string | null | undefined)[]) =>
+  secrets.reduce<string>(
+    (acc, s) => (s && s.length > 6 ? acc.split(s).join("***") : acc),
+    text,
+  );
+
+const ghHeaders = (token: string) => ({
+  authorization: `Bearer ${token}`,
+  accept: "application/vnd.github+json",
+  "user-agent": "agentkit",
+});
+
+
 export function buildAgentTools(ctx: Ctx) {
   let session: { sandbox: Sandbox; sessionId: string } | null = null;
   let lastMark = Date.now();
