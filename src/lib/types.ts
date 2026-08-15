@@ -49,6 +49,22 @@ export type Json = string | number | boolean | null | Json[] | { [key: string]: 
 
 export type SecretRequestKey = { name: string; description?: string };
 
+export type AskUserOption = { label: string; description?: string };
+
+export type AskUserQuestion = {
+  id: string;
+  question: string;
+  options: AskUserOption[];
+  allowOther?: boolean;
+  multi?: boolean;
+};
+
+export type ProgressStep = {
+  label: string;
+  status: "pending" | "running" | "done";
+};
+
+
 export type StreamEvent =
   | { type: "planning-start" }
   | { type: "planning-update"; text: string }
