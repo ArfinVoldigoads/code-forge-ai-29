@@ -130,6 +130,20 @@ export const getChat = createServerFn({ method: "POST" })
       })),
     }));
 
+    // Private bucket: hand the UI short-lived signed URLs for previews/downloads.
+    const paths = messages.flatMap((m) => m.attachments.map((a) => a.storagePath));
+    if (paths.length) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: signed } = await supabaseAdmin.storage
+        .from("attachments")
+        .createSignedUrls(paths.slice(0, 200), 60 * 60 * 6);
+      const map = new Map((signed ?? []).map((s) => [s.path ?? "", s.signedUrl]));
+      for (const m of messages) {
+        for (const a of m.attachments) a.url = map.get(a.storagePath) ?? null;
+      }
+    }
+
+
     return {
       chat: {
         id: chat.id,
