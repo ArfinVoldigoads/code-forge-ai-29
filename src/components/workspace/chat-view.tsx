@@ -183,10 +183,14 @@ export function ChatView({ chatId }: { chatId: string }) {
   }
 
   const allMessages = chatQuery.data?.messages ?? [];
-  // While we stream locally, the live timeline already shows the run; hide the
-  // half-written DB row so nothing is rendered twice.
-  const messages = streaming ? allMessages.filter((m) => m.status !== "streaming") : allMessages;
-  const remoteRunning = !streaming && allMessages.some((m) => m.status === "streaming");
+  const last = allMessages[allMessages.length - 1];
+  // While we stream locally the live timeline already shows the current run, so
+  // hide only that half-written row — older messages (even ones left marked as
+  // streaming by a dropped run) must stay visible.
+  const messages =
+    streaming && last?.status === "streaming" ? allMessages.slice(0, -1) : allMessages;
+  const remoteRunning = !streaming && last?.status === "streaming";
+  const showLive = streaming || live.timeline.length > 0;
 
 
   return (
