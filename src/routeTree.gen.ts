@@ -17,6 +17,7 @@ import { Route as ChatChatIdRouteImport } from './routes/chat.$chatId'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
+import { Route as SettingsSandboxRouteImport } from './routes/settings.sandbox'
 import { Route as SettingsSearchRouteImport } from './routes/settings.search'
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
 
@@ -60,6 +61,11 @@ const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
   path: '/providers',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSandboxRoute = SettingsSandboxRouteImport.update({
+  id: '/sandbox',
+  path: '/sandbox',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSearchRoute = SettingsSearchRouteImport.update({
   id: '/search',
   path: '/search',
@@ -80,6 +86,7 @@ export interface FileRoutesByFullPath {
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/sandbox': typeof SettingsSandboxRoute
   '/settings/search': typeof SettingsSearchRoute
   '/settings/skills': typeof SettingsSkillsRoute
 }
@@ -92,6 +99,7 @@ export interface FileRoutesByTo {
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/sandbox': typeof SettingsSandboxRoute
   '/settings/search': typeof SettingsSearchRoute
   '/settings/skills': typeof SettingsSkillsRoute
 }
@@ -105,6 +113,7 @@ export interface FileRoutesById {
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/sandbox': typeof SettingsSandboxRoute
   '/settings/search': typeof SettingsSearchRoute
   '/settings/skills': typeof SettingsSkillsRoute
 }
@@ -119,6 +128,7 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/models'
     | '/settings/providers'
+    | '/settings/sandbox'
     | '/settings/search'
     | '/settings/skills'
   fileRoutesByTo: FileRoutesByTo
@@ -131,6 +141,7 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/models'
     | '/settings/providers'
+    | '/settings/sandbox'
     | '/settings/search'
     | '/settings/skills'
   id:
@@ -143,6 +154,7 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/models'
     | '/settings/providers'
+    | '/settings/sandbox'
     | '/settings/search'
     | '/settings/skills'
   fileRoutesById: FileRoutesById
@@ -213,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsProvidersRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/sandbox': {
+      id: '/settings/sandbox'
+      path: '/sandbox'
+      fullPath: '/settings/sandbox'
+      preLoaderRoute: typeof SettingsSandboxRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/search': {
       id: '/settings/search'
       path: '/search'
@@ -234,6 +253,7 @@ interface SettingsRouteChildren {
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
+  SettingsSandboxRoute: typeof SettingsSandboxRoute
   SettingsSearchRoute: typeof SettingsSearchRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
 }
@@ -242,6 +262,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsModelsRoute: SettingsModelsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
+  SettingsSandboxRoute: SettingsSandboxRoute,
   SettingsSearchRoute: SettingsSearchRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
 }
