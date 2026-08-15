@@ -78,16 +78,48 @@ export function ChatView({ chatId }: { chatId: string }) {
       return;
     }
     atBottomRef.current = true;
+
+    // Optimistic: the bubble shows the instant the user hits send.
+    const optimisticId = `optimistic-${uuid()}`;
+    queryClient.setQueryData(["chat", chatId], (old: ChatQueryData | undefined) =>
+      old
+        ? {
+            ...old,
+            messages: [
+              ...old.messages,
+              {
+                id: optimisticId,
+                chatId,
+                role: "user",
+                content,
+                planning: null,
+                thinking: null,
+                events: [],
+                modelRef: null,
+                requestId: optimisticId,
+                error: null,
+                status: "complete",
+                revision: 1,
+                createdAt: new Date().toISOString(),
+                attachments: [],
+              } as MessageDTO,
+            ],
+          }
+        : old,
+    );
+
     try {
       if (!chatQuery.data?.chat.modelId) {
-        await updateChat({ data: { chatId, modelId: activeModelId } });
+        void updateChat({ data: { chatId, modelId: activeModelId } });
       }
       await sendUserMessage({
         data: { chatId, content, requestId: uuid(), ...(attachmentIds.length ? { attachmentIds } : {}) },
       });
-      await refresh();
+      // Don't block the stream on refetching the chat / sandbox queries.
+      void refresh();
       await start(chatId, uuid());
     } catch (error) {
+      void refresh();
       toast.error(error instanceof Error ? error.message : "Could not send the message");
     }
   }
