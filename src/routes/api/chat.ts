@@ -235,12 +235,64 @@ they can enable execution by adding a Daytona API key in Settings → Sandbox.`
 ${skillBlock || "(none enabled)"}`;
 
 
+        // User uploads: images go in as vision parts, text-ish files as extracted text.
+        const attachmentPaths = (history ?? []).flatMap((m) =>
+          ((m as { message_attachments?: { storage_path: string }[] }).message_attachments ?? []).map(
+            (a) => a.storage_path,
+          ),
+        );
+        const signedMap = new Map<string, string>();
+        if (attachmentPaths.length) {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const { data: signed } = await supabaseAdmin.storage
+            .from("attachments")
+            .createSignedUrls(attachmentPaths.slice(0, 50), 60 * 60);
+          for (const s of signed ?? []) if (s.path && s.signedUrl) signedMap.set(s.path, s.signedUrl);
+        }
+
         const messages = (history ?? [])
-          .filter((m) => (m.content ?? "").trim().length > 0)
-          .map((m) => ({
-            role: m.role as "user" | "assistant" | "system",
-            content: m.content,
-          }));
+          .map((m) => {
+            const files =
+              (
+                m as {
+                  message_attachments?: {
+                    file_name: string;
+                    mime_type: string;
+                    storage_path: string;
+                    extracted_text: string | null;
+                  }[];
+                }
+              ).message_attachments ?? [];
+            const text = (m.content ?? "").trim();
+            if (m.role !== "user" || files.length === 0) {
+              return text.length > 0
+                ? { role: m.role as "user" | "assistant" | "system", content: text }
+                : null;
+            }
+            const parts: Array<
+              { type: "text"; text: string } | { type: "image"; image: URL }
+            > = [];
+            if (text) parts.push({ type: "text", text });
+            for (const f of files) {
+              const url = signedMap.get(f.storage_path);
+              if (f.mime_type.startsWith("image/") && url) {
+                parts.push({ type: "image", image: new URL(url) });
+              } else if (f.extracted_text) {
+                parts.push({
+                  type: "text",
+                  text: `Attached file ${f.file_name} (${f.mime_type}):\n${f.extracted_text}`,
+                });
+              } else {
+                parts.push({
+                  type: "text",
+                  text: `Attached file ${f.file_name} (${f.mime_type}) is available${url ? ` at ${url}` : ""}. Download it into the sandbox with run_command + curl when you need it.`,
+                });
+              }
+            }
+            return parts.length ? { role: "user" as const, content: parts } : null;
+          })
+          .filter((m): m is NonNullable<typeof m> => m !== null);
+
 
 
         const encoder = new TextEncoder();
