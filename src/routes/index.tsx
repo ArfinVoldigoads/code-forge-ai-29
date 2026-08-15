@@ -46,16 +46,20 @@ function Home() {
   return (
     <WorkspaceShell>
       <div className="flex flex-1 items-center justify-center px-4">
-        <div className="panel-surface w-full max-w-lg p-6">
-          <div className="mb-3 flex items-center gap-2">
-            <Terminal className="h-5 w-5 text-primary" />
-            <h1 className="text-lg font-semibold tracking-tight">AI coding workspace</h1>
-          </div>
-          <p className="mb-5 text-sm text-muted-foreground">
+        <div className="w-full max-w-lg rounded-3xl border border-border/60 bg-panel/40 p-8">
+          <span className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-foreground text-background">
+            <Terminal className="h-5 w-5" />
+          </span>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">AI coding workspace</h1>
+          <p className="mt-3 mb-6 text-sm leading-relaxed text-muted-foreground">
             Start a chat and the agent will plan its approach live — assumptions, options,
             tradeoffs, then implementation — before it answers.
           </p>
-          <Button onClick={() => create.mutate()} disabled={create.isPending}>
+          <Button
+            className="h-10 rounded-lg"
+            onClick={() => create.mutate()}
+            disabled={create.isPending}
+          >
             <Plus className="mr-2 h-4 w-4" /> New chat
           </Button>
         </div>
@@ -63,3 +67,4 @@ function Home() {
     </WorkspaceShell>
   );
 }
+
