@@ -121,18 +121,28 @@ export function ChatSidebar({ onNavigate }: { onNavigate?: () => void }) {
       <div
         key={chat.id}
         className={cn(
-          "group flex items-center gap-1 rounded-md pr-1 transition-colors",
-          active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+          "group relative flex items-center gap-1 rounded-lg pr-1 transition-colors",
+          active
+            ? "bg-sidebar-accent text-foreground"
+            : "text-sidebar-foreground/85 hover:bg-sidebar-accent/50",
         )}
       >
+        <span
+          aria-hidden
+          className={cn(
+            "absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-full bg-foreground transition-opacity",
+            active ? "opacity-100" : "opacity-0",
+          )}
+        />
         <Link
           to="/chat/$chatId"
           params={{ chatId: chat.id }}
           onClick={onNavigate}
-          className="min-w-0 flex-1 truncate px-2.5 py-2 text-sm text-sidebar-foreground"
+          className="min-w-0 flex-1 truncate px-3 py-2.5 text-sm"
         >
           {chat.title}
         </Link>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
