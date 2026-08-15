@@ -5,10 +5,11 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design system: dark technical developer workspace.
- * Five colors total: charcoal background, slate panels, electric blue accent,
- * muted green success, high-contrast text. Two families: IBM Plex Sans / Mono.
+ * Design system: monochrome workspace.
+ * Pure neutral greyscale — ink black surfaces, paper white ink, no hue.
+ * Type: Space Grotesk (display) / DM Sans (body) / JetBrains Mono (code).
  */
+
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 3px);
