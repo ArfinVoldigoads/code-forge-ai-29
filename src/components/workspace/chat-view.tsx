@@ -6,6 +6,9 @@ import { Composer } from "./composer";
 import { MessageItem } from "./message-item";
 import { Timeline } from "./timeline";
 import { useChatStream } from "@/hooks/use-chat-stream";
+import type { MessageDTO } from "@/lib/types";
+
+type ChatQueryData = { chat: unknown; messages: MessageDTO[] };
 
 import { listModels } from "@/lib/settings.functions";
 import {
