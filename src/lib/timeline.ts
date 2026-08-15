@@ -81,6 +81,34 @@ export function applyTimelineEvent(
       ];
     case "secret-request":
       return [...blocks, { kind: "secret", id: event.id, reason: event.reason, keys: event.keys }];
+    case "ask-user":
+      return [
+        ...blocks,
+        {
+          kind: "ask",
+          id: event.id,
+          ...(event.title ? { title: event.title } : {}),
+          questions: event.questions,
+        },
+      ];
+    case "progress": {
+      const existing = blocks.find((b) => b.kind === "progress" && b.id === event.id);
+      if (existing)
+        return blocks.map((b) =>
+          b.kind === "progress" && b.id === event.id
+            ? { ...b, steps: event.steps, ...(event.title ? { title: event.title } : {}) }
+            : b,
+        );
+      return [
+        ...blocks,
+        {
+          kind: "progress",
+          id: event.id,
+          ...(event.title ? { title: event.title } : {}),
+          steps: event.steps,
+        },
+      ];
+    }
     default:
       return blocks;
   }

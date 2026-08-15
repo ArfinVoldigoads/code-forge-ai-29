@@ -130,6 +130,20 @@ export const getChat = createServerFn({ method: "POST" })
       })),
     }));
 
+    // Private bucket: hand the UI short-lived signed URLs for previews/downloads.
+    const paths = messages.flatMap((m) => m.attachments.map((a) => a.storagePath));
+    if (paths.length) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: signed } = await supabaseAdmin.storage
+        .from("attachments")
+        .createSignedUrls(paths.slice(0, 200), 60 * 60 * 6);
+      const map = new Map((signed ?? []).map((s) => [s.path ?? "", s.signedUrl]));
+      for (const m of messages) {
+        for (const a of m.attachments) a.url = map.get(a.storagePath) ?? null;
+      }
+    }
+
+
     return {
       chat: {
         id: chat.id,
@@ -149,6 +163,7 @@ export const sendUserMessage = createServerFn({ method: "POST" })
         chatId: z.string().uuid(),
         content: z.string().trim().min(1).max(30000),
         requestId: z.string().uuid(),
+        attachmentIds: z.array(z.string().uuid()).max(10).optional(),
       })
       .parse(d),
   )
@@ -176,6 +191,16 @@ export const sendUserMessage = createServerFn({ method: "POST" })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
+
+    if (data.attachmentIds?.length) {
+      await db
+        .from("message_attachments")
+        .update({ message_id: row.id } as never)
+        .in("id", data.attachmentIds)
+        .eq("chat_id", data.chatId);
+    }
+
+
 
     const { count } = await db
       .from("messages")

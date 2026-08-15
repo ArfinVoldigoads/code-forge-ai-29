@@ -68,6 +68,41 @@ export type Database = {
         }
         Relationships: []
       }
+      ask_user_answers: {
+        Row: {
+          answers: Json
+          ask_id: string
+          chat_id: string
+          created_at: string
+          id: string
+          skipped: boolean
+        }
+        Insert: {
+          answers?: Json
+          ask_id: string
+          chat_id: string
+          created_at?: string
+          id?: string
+          skipped?: boolean
+        }
+        Update: {
+          answers?: Json
+          ask_id?: string
+          chat_id?: string
+          created_at?: string
+          id?: string
+          skipped?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ask_user_answers_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string

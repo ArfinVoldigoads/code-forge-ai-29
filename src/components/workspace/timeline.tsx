@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Markdown } from "./markdown";
 import { ToolRow } from "./tool-activity";
+import { AskUserCard } from "./ask-user-card";
+import { ProgressCard } from "./progress-card";
 import { saveSecret } from "@/lib/secrets.functions";
 import type { SecretRequestKey, TimelineBlock } from "@/lib/types";
 
@@ -196,6 +198,24 @@ export function Timeline({ blocks, chatId }: { blocks: TimelineBlock[]; chatId: 
               key={block.id}
               url={block.url}
               {...(block.caption ? { caption: block.caption } : {})}
+            />
+          );
+        if (block.kind === "ask")
+          return (
+            <AskUserCard
+              key={block.id}
+              chatId={chatId}
+              askId={block.id}
+              {...(block.title ? { title: block.title } : {})}
+              questions={block.questions}
+            />
+          );
+        if (block.kind === "progress")
+          return (
+            <ProgressCard
+              key={block.id}
+              {...(block.title ? { title: block.title } : {})}
+              steps={block.steps}
             />
           );
         return (

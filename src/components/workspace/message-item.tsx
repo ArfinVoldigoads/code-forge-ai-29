@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { AttachmentList } from "./attachment-list";
 import { Markdown } from "./markdown";
 import { Timeline } from "./timeline";
 import { buildTimeline, timelineHasContent } from "@/lib/timeline";
@@ -109,9 +110,11 @@ export function MessageItem({
           </div>
         ) : (
           <>
-            <div className="max-w-[95%] rounded-lg rounded-br-sm border border-border bg-panel px-3.5 py-2.5 text-[0.9375rem] break-words whitespace-pre-wrap sm:max-w-[80%]">
+            <AttachmentList attachments={message.attachments} />
+            <div className="max-w-[92%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-[0.9375rem] break-words whitespace-pre-wrap text-primary-foreground sm:max-w-[80%]">
               {message.content}
             </div>
+
             <div className="flex items-center gap-1">
               {message.revision > 1 && (
                 <span className="text-[11px] text-muted-foreground">

@@ -137,10 +137,13 @@ export const Route = createFileRoute("/api/chat")({
 
         const { data: history } = await db
           .from("messages")
-          .select("role, content")
+          .select(
+            "role, content, message_attachments(file_name, mime_type, storage_path, extracted_text)",
+          )
           .eq("chat_id", chatId)
           .order("seq", { ascending: true })
           .limit(60);
+
 
         const skillBlock = (skills ?? [])
           .map((s) => `### ${s.name}\n${s.instructions}`)
@@ -213,6 +216,17 @@ at the end — narrate as you go, in between tool calls.
 - If the task needs an API key or env value, call request_secret with the exact env var names and a short reason. A secure form appears in the chat; stop and wait for the user.
 - Stored secrets are injected automatically as environment variables into every command and mirrored to .env. Use list_secrets to see which names exist. Never print their values.
 
+## Asking the user (ask_user)
+- When the request is genuinely ambiguous in a way that changes the result (stack, framework, language, target platform, design direction), call ask_user ONCE with 1-4 short questions, each with 2-4 concrete options plus a short keterangan. The user can also skip.
+- Never use ask_user for things you can decide or discover yourself, and never ask twice about the same thing. If the user skips, pick the most sensible default and continue without asking again.
+
+## Progress (set_progress)
+- For any task with more than ~3 steps, call set_progress at the start with the planned steps, then update it whenever a step starts or finishes. Keep step titles short and in the user's language.
+
+## Attachments
+- Files the user uploads arrive as images or as extracted text in the conversation. Use them as the source of truth; when a binary file must be used inside the sandbox, download it with run_command + curl from the provided URL.
+
+
 ## Sandbox
 ${
   sandboxKey
@@ -232,12 +246,64 @@ they can enable execution by adding a Daytona API key in Settings → Sandbox.`
 ${skillBlock || "(none enabled)"}`;
 
 
+        // User uploads: images go in as vision parts, text-ish files as extracted text.
+        const attachmentPaths = (history ?? []).flatMap((m) =>
+          ((m as { message_attachments?: { storage_path: string }[] }).message_attachments ?? []).map(
+            (a) => a.storage_path,
+          ),
+        );
+        const signedMap = new Map<string, string>();
+        if (attachmentPaths.length) {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const { data: signed } = await supabaseAdmin.storage
+            .from("attachments")
+            .createSignedUrls(attachmentPaths.slice(0, 50), 60 * 60);
+          for (const s of signed ?? []) if (s.path && s.signedUrl) signedMap.set(s.path, s.signedUrl);
+        }
+
         const messages = (history ?? [])
-          .filter((m) => (m.content ?? "").trim().length > 0)
-          .map((m) => ({
-            role: m.role as "user" | "assistant" | "system",
-            content: m.content,
-          }));
+          .map((m) => {
+            const files =
+              (
+                m as {
+                  message_attachments?: {
+                    file_name: string;
+                    mime_type: string;
+                    storage_path: string;
+                    extracted_text: string | null;
+                  }[];
+                }
+              ).message_attachments ?? [];
+            const text = (m.content ?? "").trim();
+            if (m.role !== "user" || files.length === 0) {
+              return text.length > 0
+                ? { role: m.role as "user" | "assistant" | "system", content: text }
+                : null;
+            }
+            const parts: Array<
+              { type: "text"; text: string } | { type: "image"; image: URL }
+            > = [];
+            if (text) parts.push({ type: "text", text });
+            for (const f of files) {
+              const url = signedMap.get(f.storage_path);
+              if (f.mime_type.startsWith("image/") && url) {
+                parts.push({ type: "image", image: new URL(url) });
+              } else if (f.extracted_text) {
+                parts.push({
+                  type: "text",
+                  text: `Attached file ${f.file_name} (${f.mime_type}):\n${f.extracted_text}`,
+                });
+              } else {
+                parts.push({
+                  type: "text",
+                  text: `Attached file ${f.file_name} (${f.mime_type}) is available${url ? ` at ${url}` : ""}. Download it into the sandbox with run_command + curl when you need it.`,
+                });
+              }
+            }
+            return parts.length ? { role: "user" as const, content: parts } : null;
+          })
+          .filter((m): m is NonNullable<typeof m> => m !== null);
+
 
 
         const encoder = new TextEncoder();
