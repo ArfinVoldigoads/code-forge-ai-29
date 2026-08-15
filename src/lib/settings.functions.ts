@@ -295,77 +295,88 @@ export const updateSkill = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-/* ----------------------------------- e2b ---------------------------------- */
+/* --------------------------------- sandbox -------------------------------- */
 
-export const getE2BSettings = createServerFn({ method: "GET" }).handler(async () => {
+export const getSandboxSettings = createServerFn({ method: "GET" }).handler(async () => {
   const { requireUnlocked } = await import("./gate.server");
   await requireUnlocked();
-  const { db, maskKey } = await import("./db.server");
-  const { data } = await db.from("app_settings").select("value").eq("key", "e2b").maybeSingle();
-  const value = (data?.value ?? {}) as {
-    apiKey?: string | null;
-    status?: string;
-    statusMessage?: string | null;
-    lastTestedAt?: string | null;
-  };
+  const { maskKey } = await import("./db.server");
+  const { getDaytonaSettings } = await import("./daytona.server");
+  const value = await getDaytonaSettings();
   return {
     keyMask: maskKey(value.apiKey),
     hasKey: Boolean(value.apiKey),
+    apiUrl: value.apiUrl,
+    target: value.target,
+    snapshot: value.snapshot,
     status: value.status ?? "untested",
     statusMessage: value.statusMessage ?? null,
     lastTestedAt: value.lastTestedAt ?? null,
   };
 });
 
-export const saveE2BKey = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ apiKey: z.string().trim().min(8).max(300) }).parse(d))
+const sandboxInput = z.object({
+  apiKey: z.string().trim().max(400).optional().nullable(),
+  apiUrl: z.string().trim().max(300).optional().nullable(),
+  target: z.string().trim().max(60).optional().nullable(),
+  snapshot: z.string().trim().max(80).optional().nullable(),
+});
+
+export const saveSandboxSettings = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => sandboxInput.parse(d))
   .handler(async ({ data }) => {
     const { requireUnlocked } = await import("./gate.server");
     await requireUnlocked();
     const { db, audit } = await import("./db.server");
+    const { getDaytonaSettings } = await import("./daytona.server");
+    const current = await getDaytonaSettings();
     await db.from("app_settings").upsert({
-      key: "e2b",
+      key: "daytona",
       value: {
-        apiKey: data.apiKey,
+        apiKey: data.apiKey ? data.apiKey : current.apiKey,
+        apiUrl: data.apiUrl || null,
+        target: data.target || null,
+        snapshot: data.snapshot || current.snapshot,
         status: "untested",
         statusMessage: null,
         lastTestedAt: null,
       } as never,
     });
-    await audit("e2b.key_saved");
+    await audit("sandbox.settings_saved");
     return { ok: true };
   });
 
-export const deleteE2BKey = createServerFn({ method: "POST" }).handler(async () => {
+export const deleteSandboxKey = createServerFn({ method: "POST" }).handler(async () => {
   const { requireUnlocked } = await import("./gate.server");
   await requireUnlocked();
   const { db, audit } = await import("./db.server");
   await db.from("app_settings").upsert({
-    key: "e2b",
+    key: "daytona",
     value: { apiKey: null, status: "untested", statusMessage: null, lastTestedAt: null } as never,
   });
-  await audit("e2b.key_deleted");
+  await audit("sandbox.key_deleted");
   return { ok: true };
 });
 
-export const testE2B = createServerFn({ method: "POST" }).handler(async () => {
+export const testSandbox = createServerFn({ method: "POST" }).handler(async () => {
   const { requireUnlocked } = await import("./gate.server");
   await requireUnlocked();
   const { db, audit } = await import("./db.server");
-  const { data } = await db.from("app_settings").select("value").eq("key", "e2b").maybeSingle();
-  const value = (data?.value ?? {}) as { apiKey?: string | null };
+  const { getDaytonaSettings } = await import("./daytona.server");
+  const value = await getDaytonaSettings();
 
   let result: { ok: boolean; message: string };
   if (!value.apiKey) {
-    result = { ok: false, message: "No E2B API key saved yet." };
+    result = { ok: false, message: "No Daytona API key saved yet." };
   } else {
     try {
-      const res = await fetch("https://api.e2b.dev/templates", {
-        headers: { "X-API-KEY": value.apiKey },
-        signal: AbortSignal.timeout(15000),
+      const base = value.apiUrl || "https://app.daytona.io/api";
+      const res = await fetch(`${base.replace(/\/$/, "")}/sandbox?limit=1`, {
+        headers: { authorization: `Bearer ${value.apiKey}` },
+        signal: AbortSignal.timeout(20000),
       });
       result = res.ok
-        ? { ok: true, message: "Connected to E2B" }
+        ? { ok: true, message: "Connected to Daytona" }
         : { ok: false, message: `HTTP ${res.status}: ${(await res.text()).slice(0, 200)}` };
     } catch (e) {
       result = { ok: false, message: (e instanceof Error ? e.message : String(e)).slice(0, 300) };
@@ -373,14 +384,17 @@ export const testE2B = createServerFn({ method: "POST" }).handler(async () => {
   }
 
   await db.from("app_settings").upsert({
-    key: "e2b",
+    key: "daytona",
     value: {
-      apiKey: value.apiKey ?? null,
+      apiKey: value.apiKey,
+      apiUrl: value.apiUrl,
+      target: value.target,
+      snapshot: value.snapshot,
       status: result.ok ? "connected" : "error",
       statusMessage: result.message,
       lastTestedAt: new Date().toISOString(),
     } as never,
   });
-  await audit("e2b.test", undefined, undefined, { ok: result.ok });
+  await audit("sandbox.test", undefined, undefined, { ok: result.ok });
   return result;
 });
