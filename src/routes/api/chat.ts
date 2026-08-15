@@ -137,10 +137,13 @@ export const Route = createFileRoute("/api/chat")({
 
         const { data: history } = await db
           .from("messages")
-          .select("role, content")
+          .select(
+            "role, content, message_attachments(file_name, mime_type, storage_path, extracted_text)",
+          )
           .eq("chat_id", chatId)
           .order("seq", { ascending: true })
           .limit(60);
+
 
         const skillBlock = (skills ?? [])
           .map((s) => `### ${s.name}\n${s.instructions}`)
