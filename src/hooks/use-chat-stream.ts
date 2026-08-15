@@ -110,8 +110,13 @@ export function useChatStream(onFinish: () => void | Promise<void>) {
         setStreaming(false);
         abortRef.current = null;
         runRef.current = null;
-        await onFinish();
-        setLive(EMPTY);
+        // Keep the finished timeline on screen until the persisted message has
+        // been refetched — otherwise thinking/tool blocks blink away.
+        try {
+          await onFinish();
+        } finally {
+          setLive(EMPTY);
+        }
       }
 
     },

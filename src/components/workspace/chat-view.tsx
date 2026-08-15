@@ -6,6 +6,9 @@ import { Composer } from "./composer";
 import { MessageItem } from "./message-item";
 import { Timeline } from "./timeline";
 import { useChatStream } from "@/hooks/use-chat-stream";
+import type { MessageDTO } from "@/lib/types";
+
+type ChatQueryData = { chat: unknown; messages: MessageDTO[] };
 
 import { listModels } from "@/lib/settings.functions";
 import {
@@ -78,16 +81,48 @@ export function ChatView({ chatId }: { chatId: string }) {
       return;
     }
     atBottomRef.current = true;
+
+    // Optimistic: the bubble shows the instant the user hits send.
+    const optimisticId = `optimistic-${uuid()}`;
+    queryClient.setQueryData(["chat", chatId], (old: ChatQueryData | undefined) =>
+      old
+        ? {
+            ...old,
+            messages: [
+              ...old.messages,
+              {
+                id: optimisticId,
+                chatId,
+                role: "user",
+                content,
+                planning: null,
+                thinking: null,
+                events: [],
+                modelRef: null,
+                requestId: optimisticId,
+                error: null,
+                status: "complete",
+                revision: 1,
+                createdAt: new Date().toISOString(),
+                attachments: [],
+              } as MessageDTO,
+            ],
+          }
+        : old,
+    );
+
     try {
       if (!chatQuery.data?.chat.modelId) {
-        await updateChat({ data: { chatId, modelId: activeModelId } });
+        void updateChat({ data: { chatId, modelId: activeModelId } });
       }
       await sendUserMessage({
         data: { chatId, content, requestId: uuid(), ...(attachmentIds.length ? { attachmentIds } : {}) },
       });
-      await refresh();
+      // Don't block the stream on refetching the chat / sandbox queries.
+      void refresh();
       await start(chatId, uuid());
     } catch (error) {
+      void refresh();
       toast.error(error instanceof Error ? error.message : "Could not send the message");
     }
   }
@@ -148,10 +183,14 @@ export function ChatView({ chatId }: { chatId: string }) {
   }
 
   const allMessages = chatQuery.data?.messages ?? [];
-  // While we stream locally, the live timeline already shows the run; hide the
-  // half-written DB row so nothing is rendered twice.
-  const messages = streaming ? allMessages.filter((m) => m.status !== "streaming") : allMessages;
-  const remoteRunning = !streaming && allMessages.some((m) => m.status === "streaming");
+  const last = allMessages[allMessages.length - 1];
+  // While we stream locally the live timeline already shows the current run, so
+  // hide only that half-written row — older messages (even ones left marked as
+  // streaming by a dropped run) must stay visible.
+  const messages =
+    streaming && last?.status === "streaming" ? allMessages.slice(0, -1) : allMessages;
+  const remoteRunning = !streaming && last?.status === "streaming";
+  const showLive = streaming || live.timeline.length > 0;
 
 
   return (
@@ -204,18 +243,20 @@ export function ChatView({ chatId }: { chatId: string }) {
             />
           ))}
 
-          {streaming && (
+          {showLive && (
             <div className="space-y-2">
               <Timeline blocks={live.timeline} chatId={chatId} />
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {live.phaseLabel ||
-                  (live.phase === "acting"
-                    ? "Working in the sandbox…"
-                    : live.phase === "thinking"
-                      ? "Thinking…"
-                      : "Working…")}
-              </div>
+              {streaming && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {live.phaseLabel ||
+                    (live.phase === "acting"
+                      ? "Working in the sandbox…"
+                      : live.phase === "thinking"
+                        ? "Thinking…"
+                        : "Working…")}
+                </div>
+              )}
             </div>
           )}
 
