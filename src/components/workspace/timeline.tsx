@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Markdown } from "./markdown";
 import { ToolRow } from "./tool-activity";
+import { AskUserCard } from "./ask-user-card";
+import { ProgressCard } from "./progress-card";
 import { saveSecret } from "@/lib/secrets.functions";
 import type { SecretRequestKey, TimelineBlock } from "@/lib/types";
 
