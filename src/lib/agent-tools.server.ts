@@ -488,7 +488,7 @@ export function buildAgentTools(ctx: Ctx) {
         run("screenshot", { port: port ?? 5173, path: path ?? "/" }, async (toolId) => {
           const p = port ?? 5173;
           const target = `http://127.0.0.1:${p}${path && path.startsWith("/") ? path : `/${path ?? ""}`}`;
-          await withSandbox((sbx) => sbx.setTimeout(900_000)).catch(() => undefined);
+          await withSandbox((sbx) => sbx.refreshLease()).catch(() => undefined);
 
 
           const preview = await shell(

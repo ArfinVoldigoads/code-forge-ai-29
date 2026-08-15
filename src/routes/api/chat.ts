@@ -146,8 +146,8 @@ export const Route = createFileRoute("/api/chat")({
           .map((s) => `### ${s.name}\n${s.instructions}`)
           .join("\n\n");
 
-        const { getE2BKey } = await import("@/lib/e2b.server");
-        const e2bKey = await getE2BKey();
+        const { getSandboxApiKey } = await import("@/lib/daytona.server");
+        const sandboxKey = await getSandboxApiKey();
 
         const systemPrompt = `You are an expert autonomous AI coding agent operating inside a real developer workspace.
 You reason first, then act. Be precise, concrete and honest about limitations.
@@ -215,11 +215,17 @@ at the end — narrate as you go, in between tool calls.
 
 ## Sandbox
 ${
-  e2bKey
-    ? `A real E2B Linux sandbox is connected at /home/user/project. All sandbox tools are active.
-Every factual claim about files, commands, tests, networking, or runtime behavior must be backed by a tool result from this turn.`
+  sandboxKey
+    ? `A real Daytona Linux sandbox is connected at /home/daytona/project. All sandbox tools are active.
+Every factual claim about files, commands, tests, networking, or runtime behavior must be backed by a tool result from this turn.
+The sandbox is yours to manage: use sandbox_info when things feel slow or a build is killed, sandbox_resize to give
+yourself more CPU/RAM/disk, sandbox_restart when the shell is wedged, and sandbox_network_check when downloads fail.
+Never assume "out of memory" or "no internet" — verify with these tools, fix it yourself, and continue.
+Preview URLs from start_dev_server are public HTTPS links you can share with the user and open yourself.
+For GUI work (real browser testing, desktop apps) call desktop_start, then desktop_screenshot and desktop_input.
+You may only manage the sandbox of this chat; never touch other sandboxes or projects.`
     : `No sandbox is configured, so you cannot execute code. Answer with code blocks and tell the user
-they can enable execution by adding an E2B API key in Settings → E2B.`
+they can enable execution by adding a Daytona API key in Settings → Sandbox.`
 }
 
 ## Active skills
@@ -299,11 +305,11 @@ ${skillBlock || "(none enabled)"}`;
             try {
               // ---- single autonomous loop: think → act → verify → repeat ----
               let tools: Record<string, unknown> | undefined;
-              if (e2bKey) {
+              if (sandboxKey) {
                 const { buildAgentTools } = await import("@/lib/agent-tools.server");
                 tools = buildAgentTools({
                   chatId,
-                  apiKey: e2bKey,
+                  apiKey: sandboxKey,
                   send,
                   record: (event) => events.push(event),
                 });
