@@ -159,14 +159,16 @@ export function ChatView({ chatId }: { chatId: string }) {
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="scroll-thin min-h-0 flex-1 overflow-y-auto px-3 py-4"
+        className="scroll-thin min-h-0 flex-1 overflow-y-auto px-3 py-6"
       >
-        <div className="mx-auto w-full max-w-3xl space-y-6">
+        <div className="mx-auto w-full max-w-3xl space-y-7">
           {messages.length === 0 && !streaming && (
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <h1 className="text-xl font-semibold tracking-tight">Mau bangun apa hari ini?</h1>
-                <p className="text-sm text-muted-foreground">
+            <div className="space-y-6 py-8">
+              <div className="space-y-2">
+                <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
+                  Mau bangun apa hari ini?
+                </h1>
+                <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
                   Agent berpikir, menjelajah sandbox, menulis kode, menjalankannya, memperbaiki yang
                   gagal, lalu memverifikasi hasilnya — otomatis.
                 </p>
@@ -181,7 +183,7 @@ export function ChatView({ chatId }: { chatId: string }) {
                     key={example}
                     type="button"
                     onClick={() => void send(example)}
-                    className="min-h-16 rounded-xl border border-border/70 bg-panel/60 p-3 text-left text-sm transition-colors hover:border-primary/50 hover:bg-accent/40"
+                    className="min-h-20 rounded-2xl border border-border/60 bg-panel/40 p-4 text-left text-sm leading-snug transition-colors hover:border-foreground/40 hover:bg-panel"
                   >
                     {example}
                   </button>
@@ -189,6 +191,7 @@ export function ChatView({ chatId }: { chatId: string }) {
               </div>
             </div>
           )}
+
 
           {messages.map((message) => (
             <MessageItem
