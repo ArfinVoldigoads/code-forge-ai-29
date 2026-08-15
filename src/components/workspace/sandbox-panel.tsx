@@ -27,6 +27,7 @@ import {
   sandboxStatus,
   startPreview,
   startSandbox,
+  startDesktop,
   heartbeatSandbox,
 
   writeSandboxFile,
@@ -117,15 +118,16 @@ export function SandboxPanel({ chatId }: { chatId: string }) {
 
       {status.data && !status.data.hasKey && (
         <p className="border-b border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
-          Add an E2B API key in Settings → E2B to use the console and file explorer.
+          Add a Daytona API key in Settings → Sandbox to use the console, files and desktop.
         </p>
       )}
 
       <Tabs defaultValue="preview" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="mx-3 mt-2 grid w-auto grid-cols-4">
+        <TabsList className="mx-3 mt-2 grid w-auto grid-cols-5">
           <TabsTrigger value="console">Console</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
           <TabsTrigger value="preview">Preview</TabsTrigger>
+          <TabsTrigger value="desktop">Desktop</TabsTrigger>
           <TabsTrigger value="secrets">Secrets</TabsTrigger>
         </TabsList>
         <TabsContent value="console" className="min-h-0 flex-1">
@@ -136,6 +138,9 @@ export function SandboxPanel({ chatId }: { chatId: string }) {
         </TabsContent>
         <TabsContent value="preview" className="min-h-0 flex-1">
           <PreviewTab chatId={chatId} />
+        </TabsContent>
+        <TabsContent value="desktop" className="min-h-0 flex-1">
+          <DesktopTab chatId={chatId} />
         </TabsContent>
         <TabsContent value="secrets" className="min-h-0 flex-1">
           <SecretsTab chatId={chatId} />
@@ -428,6 +433,53 @@ function FilesTab({ chatId }: { chatId: string }) {
             <span className="truncate font-mono">{entry.name}</span>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function DesktopTab({ chatId }: { chatId: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const boot = useMutation({
+    mutationFn: () => startDesktop({ data: { chatId } }),
+    onSuccess: (r) => setUrl(r.url),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  useEffect(() => {
+    setUrl(null);
+  }, [chatId]);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
+      <div className="flex items-center gap-2">
+        <Button size="sm" className="h-8 text-xs" disabled={boot.isPending} onClick={() => boot.mutate()}>
+          {boot.isPending ? (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <MonitorPlay className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          Start desktop
+        </Button>
+        {url && (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> open in a tab
+          </a>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-muted/20">
+        {url ? (
+          <iframe title="Sandbox desktop" src={url} className="h-full w-full" />
+        ) : (
+          <p className="px-3 py-2 text-xs text-muted-foreground">
+            Start the desktop to watch the agent use a real browser or GUI apps over VNC.
+          </p>
+        )}
       </div>
     </div>
   );

@@ -219,3 +219,14 @@ export const startPreview = createServerFn({ method: "POST" })
     }
     return { url: await sandbox.previewUrl(port), port };
   });
+
+/** Boot the VNC desktop for this chat and return the public noVNC URL. */
+export const startDesktop = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ chatId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { getSandboxSession } = await import("./sandbox-ops.server");
+    const { sandbox } = await getSandboxSession(data.chatId);
+    await sandbox.raw.computerUse.start().catch(() => undefined);
+    const url = await sandbox.previewUrl(6080);
+    return { url };
+  });
