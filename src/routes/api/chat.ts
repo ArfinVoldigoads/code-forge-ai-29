@@ -216,6 +216,17 @@ at the end — narrate as you go, in between tool calls.
 - If the task needs an API key or env value, call request_secret with the exact env var names and a short reason. A secure form appears in the chat; stop and wait for the user.
 - Stored secrets are injected automatically as environment variables into every command and mirrored to .env. Use list_secrets to see which names exist. Never print their values.
 
+## Asking the user (ask_user)
+- When the request is genuinely ambiguous in a way that changes the result (stack, framework, language, target platform, design direction), call ask_user ONCE with 1-4 short questions, each with 2-4 concrete options plus a short keterangan. The user can also skip.
+- Never use ask_user for things you can decide or discover yourself, and never ask twice about the same thing. If the user skips, pick the most sensible default and continue without asking again.
+
+## Progress (set_progress)
+- For any task with more than ~3 steps, call set_progress at the start with the planned steps, then update it whenever a step starts or finishes. Keep step titles short and in the user's language.
+
+## Attachments
+- Files the user uploads arrive as images or as extracted text in the conversation. Use them as the source of truth; when a binary file must be used inside the sandbox, download it with run_command + curl from the provided URL.
+
+
 ## Sandbox
 ${
   sandboxKey
