@@ -184,7 +184,7 @@ export function Composer({
           }}
           placeholder="Jelaskan tugasnya… Enter kirim, Shift+Enter baris baru."
           aria-label="Message"
-          className="max-h-48 min-h-[64px] resize-none border-0 bg-transparent px-2 text-base shadow-none focus-visible:ring-0 sm:text-sm"
+          className="max-h-48 min-h-[64px] resize-none border-0 bg-transparent px-3 text-base leading-relaxed shadow-none focus-visible:ring-0 sm:text-[0.9375rem]"
           maxLength={30000}
         />
 
@@ -204,7 +204,7 @@ export function Composer({
             size="icon"
             variant="ghost"
             aria-label="Lampirkan file"
-            className="h-9 w-9 shrink-0 rounded-full"
+            className="h-10 w-10 shrink-0 rounded-full"
             onClick={() => fileRef.current?.click()}
           >
             <Paperclip className="h-4 w-4" />
@@ -212,9 +212,10 @@ export function Composer({
 
           <Select value={modelId ?? ""} onValueChange={onModelChange}>
             <SelectTrigger
-              className="h-9 min-w-0 flex-1 rounded-full border-border/70 text-xs sm:max-w-56"
+              className="h-9 min-w-0 flex-1 rounded-full border-border/60 bg-background/40 text-xs sm:max-w-56"
               aria-label="Model selector"
             >
+
               <SelectValue placeholder="Pilih model" />
             </SelectTrigger>
             <SelectContent>
