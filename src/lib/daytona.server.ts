@@ -268,8 +268,58 @@ async function assertHealthyShell(handle: SandboxHandle): Promise<void> {
   );
 }
 
+/** Best effort: free a remote sandbox so it stops eating the org memory quota. */
+async function destroySandbox(raw: { delete?: () => Promise<unknown> } | null): Promise<void> {
+  await raw?.delete?.().catch(() => {});
+}
+
+/** Adopt a sandbox Daytona already holds for this chat instead of creating another. */
+async function adoptExistingRemote(
+  daytona: Daytona,
+  chatId: string,
+  apiKey: string,
+): Promise<SandboxHandle | null> {
+  let found: DaytonaSandbox[] = [];
+  try {
+    found = await daytona.list({ agentkit: "1", chat: chatId });
+  } catch {
+    return null;
+  }
+  let adopted: SandboxHandle | null = null;
+  for (const raw of found) {
+    if (adopted) {
+      // Anything extra for this chat is a leak from a failed start — remove it.
+      await destroySandbox(raw as unknown as { delete?: () => Promise<unknown> });
+      continue;
+    }
+    try {
+      if (raw.state !== "started") await raw.start(120);
+      const handle = new SandboxHandle(raw, apiKey);
+      await handle.refreshLease().catch(() => {});
+      await assertHealthyShell(handle);
+      adopted = handle;
+    } catch {
+      await destroySandbox(raw as unknown as { delete?: () => Promise<unknown> });
+    }
+  }
+  return adopted;
+}
+
+/** One in-flight start per chat, so repeated Start clicks never fan out into new sandboxes. */
+const pendingSessions = new Map<string, Promise<Session>>();
+
+export function getSandboxForChat(chatId: string, apiKey: string): Promise<Session> {
+  const inflight = pendingSessions.get(chatId);
+  if (inflight) return inflight;
+  const task = resolveSandboxForChat(chatId, apiKey).finally(() => {
+    pendingSessions.delete(chatId);
+  });
+  pendingSessions.set(chatId, task);
+  return task;
+}
+
 /** Reuse the chat's running sandbox, resuming or creating one when needed. */
-export async function getSandboxForChat(chatId: string, apiKey: string): Promise<Session> {
+async function resolveSandboxForChat(chatId: string, apiKey: string): Promise<Session> {
   const cfg = await getDaytonaSettings();
   const daytona = daytonaClient(apiKey, cfg);
 
