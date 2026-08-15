@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { Sandbox } from "e2b";
+import type { SandboxHandle } from "@/lib/daytona.server";
 import { db } from "@/lib/db.server";
 import {
   getChatEnv,
@@ -12,7 +12,7 @@ import {
   runShell,
   syncEnvFile,
   WORKDIR,
-} from "@/lib/e2b.server";
+} from "@/lib/daytona.server";
 import type { Json, StreamEvent } from "@/lib/types";
 
 type Ctx = {
@@ -26,7 +26,7 @@ const MAX_OUT = 8000;
 const clip = (text: string) =>
   text.length > MAX_OUT ? `${text.slice(0, MAX_OUT)}\n…truncated` : text;
 
-const SHOT_DIR = "/home/user/.agentkit";
+const SHOT_DIR = "/home/daytona/.agentkit";
 
 /** Strip a credential out of any command output before it reaches the model or UI. */
 const redact = (text: string, ...secrets: (string | null | undefined)[]) =>
@@ -43,7 +43,7 @@ const ghHeaders = (token: string) => ({
 
 
 export function buildAgentTools(ctx: Ctx) {
-  let session: { sandbox: Sandbox; sessionId: string } | null = null;
+  let session: { sandbox: SandboxHandle; sessionId: string } | null = null;
   let lastMark = Date.now();
 
   const sandbox = async () => {
@@ -54,7 +54,7 @@ export function buildAgentTools(ctx: Ctx) {
     }
     // Refresh the lease on every tool call so a long run never expires mid-task.
     try {
-      await session.sandbox.setTimeout(60 * 60 * 1000);
+      await session.sandbox.refreshLease();
     } catch {
       session = await getSandboxForChat(ctx.chatId, ctx.apiKey);
       await syncEnvFile(session.sandbox, ctx.chatId).catch(() => []);
@@ -79,7 +79,7 @@ export function buildAgentTools(ctx: Ctx) {
   };
 
   /** Run a sandbox SDK call, transparently retrying once on a dead sandbox. */
-  const withSandbox = async <T>(fn: (sbx: Sandbox) => Promise<T>): Promise<T> => {
+  const withSandbox = async <T>(fn: (sbx: SandboxHandle) => Promise<T>): Promise<T> => {
     const active = await sandbox();
     try {
       return await fn(active.sandbox);
@@ -307,7 +307,7 @@ export function buildAgentTools(ctx: Ctx) {
       }),
       execute: async ({ path, startLine, endLine }) =>
         run("read_file", { path, startLine: startLine ?? null, endLine: endLine ?? null }, async () => {
-          const content = await withSandbox((sbx) => sbx.files.read(resolvePath(path)));
+          const content: string = await withSandbox((sbx) => sbx.files.read(resolvePath(path)));
           if (!startLine && !endLine) return { path, content: clip(content) };
           const lines = content.split("\n");
           const from = (startLine ?? 1) - 1;
@@ -333,7 +333,7 @@ export function buildAgentTools(ctx: Ctx) {
       execute: async ({ path, find, replace }) =>
         run("apply_patch", { path }, async () => {
           const full = resolvePath(path);
-          const content = await withSandbox((sbx) => sbx.files.read(full));
+          const content: string = await withSandbox((sbx) => sbx.files.read(full));
           const occurrences = content.split(find).length - 1;
           if (occurrences === 0) throw new Error("Snippet not found — read the file again.");
           if (occurrences > 1)
@@ -353,7 +353,7 @@ export function buildAgentTools(ctx: Ctx) {
       execute: async ({ path }) =>
         run("list_files", { path: path ?? "." }, async () => {
           const entries = await withSandbox((sbx) => sbx.files.list(resolvePath(path ?? ".")));
-          return { entries: entries.map((e) => ({ name: e.name, type: e.type ?? "file" })) };
+          return { entries: entries.map((e) => ({ name: e.name, type: e.type })) };
         }),
 
     }),
@@ -439,20 +439,14 @@ export function buildAgentTools(ctx: Ctx) {
       execute: async ({ port }) =>
         run("start_dev_server", { port: port ?? 5173 }, async () => {
           const p = port ?? 5173;
-          const { shellCommand } = await import("@/lib/e2b.server");
+          const { runBackground } = await import("@/lib/daytona.server");
           const envs = await getChatEnv(ctx.chatId);
           const alive = await shell(`curl -fsS --max-time 2 http://127.0.0.1:${p} >/dev/null`, {
             timeoutMs: 10_000,
           });
           if (alive.exitCode !== 0) {
             const command = `if [ -f package.json ]; then\n  if [ -f bun.lockb ] || [ -f bun.lock ]; then bun run dev -- --host 0.0.0.0 --port ${p};\n  elif [ -f pnpm-lock.yaml ]; then pnpm dev -- --host 0.0.0.0 --port ${p};\n  else npm run dev -- --host 0.0.0.0 --port ${p}; fi\nelif [ -f index.html ]; then python3 -m http.server ${p} --bind 0.0.0.0;\nelse echo 'No web project found' >&2; exit 1; fi`;
-            await withSandbox((sbx) =>
-              sbx.commands.run(shellCommand(command), {
-                cwd: WORKDIR,
-                background: true,
-                ...(Object.keys(envs).length ? { envs } : {}),
-              }),
-            );
+            await withSandbox((sbx) => runBackground(sbx, command, envs));
             const ready = await shell(
               `for i in $(seq 1 20); do curl -fsS --max-time 2 http://127.0.0.1:${p} >/dev/null && exit 0; sleep 1; done; exit 1`,
               { timeoutMs: 30_000 },
@@ -461,8 +455,8 @@ export function buildAgentTools(ctx: Ctx) {
               throw new Error(`Dev server did not become ready on port ${p}. Inspect its console output, fix the startup error, and retry.`);
             }
           }
-          const host = (await sandbox()).sandbox.getHost(p);
-          return { url: `https://${host}`, port: p, alreadyRunning: alive.exitCode === 0 };
+          const url = await withSandbox((sbx) => sbx.previewUrl(p));
+          return { url, port: p, alreadyRunning: alive.exitCode === 0 };
 
         }),
     }),
@@ -530,9 +524,7 @@ export function buildAgentTools(ctx: Ctx) {
             throw new Error(`Screenshot browser failed: ${clip(shot.stderr || shot.stdout)}`);
           }
 
-          const bytes = (await withSandbox((sbx) =>
-            sbx.files.read(`${SHOT_DIR}/shot.png`, { format: "bytes" }),
-          )) as unknown as Uint8Array;
+          const bytes = await withSandbox((sbx) => sbx.files.readBytes(`${SHOT_DIR}/shot.png`));
 
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
           const key = `${ctx.chatId}/${Date.now()}.png`;
