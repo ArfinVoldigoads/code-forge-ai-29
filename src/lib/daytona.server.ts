@@ -268,8 +268,60 @@ async function assertHealthyShell(handle: SandboxHandle): Promise<void> {
   );
 }
 
+/** Best effort: free a remote sandbox so it stops eating the org memory quota. */
+async function destroySandbox(raw: { delete?: () => Promise<unknown> } | null): Promise<void> {
+  await raw?.delete?.().catch(() => {});
+}
+
+/** Adopt a sandbox Daytona already holds for this chat instead of creating another. */
+async function adoptExistingRemote(
+  daytona: Daytona,
+  chatId: string,
+  apiKey: string,
+): Promise<SandboxHandle | null> {
+  const found: DaytonaSandbox[] = [];
+  try {
+    for await (const sb of daytona.list({ labels: { agentkit: "1", chat: chatId } })) {
+      found.push(sb);
+    }
+  } catch {
+    return null;
+  }
+  let adopted: SandboxHandle | null = null;
+  for (const raw of found) {
+    if (adopted) {
+      // Anything extra for this chat is a leak from a failed start — remove it.
+      await destroySandbox(raw as unknown as { delete?: () => Promise<unknown> });
+      continue;
+    }
+    try {
+      if (raw.state !== "started") await raw.start(120);
+      const handle = new SandboxHandle(raw, apiKey);
+      await handle.refreshLease().catch(() => {});
+      await assertHealthyShell(handle);
+      adopted = handle;
+    } catch {
+      await destroySandbox(raw as unknown as { delete?: () => Promise<unknown> });
+    }
+  }
+  return adopted;
+}
+
+/** One in-flight start per chat, so repeated Start clicks never fan out into new sandboxes. */
+const pendingSessions = new Map<string, Promise<Session>>();
+
+export function getSandboxForChat(chatId: string, apiKey: string): Promise<Session> {
+  const inflight = pendingSessions.get(chatId);
+  if (inflight) return inflight;
+  const task = resolveSandboxForChat(chatId, apiKey).finally(() => {
+    pendingSessions.delete(chatId);
+  });
+  pendingSessions.set(chatId, task);
+  return task;
+}
+
 /** Reuse the chat's running sandbox, resuming or creating one when needed. */
-export async function getSandboxForChat(chatId: string, apiKey: string): Promise<Session> {
+async function resolveSandboxForChat(chatId: string, apiKey: string): Promise<Session> {
   const cfg = await getDaytonaSettings();
   const daytona = daytonaClient(apiKey, cfg);
 
@@ -281,6 +333,33 @@ export async function getSandboxForChat(chatId: string, apiKey: string): Promise
     .order("last_active_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  const persist = async (handle: SandboxHandle): Promise<Session> => {
+    const { data: row } = await db
+      .from("sandbox_sessions")
+      .select("id")
+      .eq("chat_id", chatId)
+      .eq("sandbox_id", handle.sandboxId)
+      .maybeSingle();
+    if (row?.id) {
+      await db
+        .from("sandbox_sessions")
+        .update({ status: "running", last_active_at: new Date().toISOString() })
+        .eq("id", row.id);
+      return { sandbox: handle, sessionId: row.id };
+    }
+    const { data: created } = await db
+      .from("sandbox_sessions")
+      .insert({
+        chat_id: chatId,
+        sandbox_id: handle.sandboxId,
+        template: cfg.snapshot,
+        status: "running",
+      } as never)
+      .select("id")
+      .single();
+    return { sandbox: handle, sessionId: created?.id ?? "" };
+  };
 
   if (existing) {
     try {
@@ -299,36 +378,71 @@ export async function getSandboxForChat(chatId: string, apiKey: string): Promise
         .eq("id", existing.id);
       return { sandbox: handle, sessionId: existing.id };
     } catch {
+      // The row is stale: drop the remote sandbox too, otherwise it keeps
+      // holding memory from the org quota while nothing can use it.
+      await daytona
+        .get(existing.sandbox_id)
+        .then((raw) => destroySandbox(raw as unknown as { delete?: () => Promise<unknown> }))
+        .catch(() => {});
       await db.from("sandbox_sessions").update({ status: "stopped" }).eq("id", existing.id);
     }
   }
 
-  const raw = await daytona.create(
-    {
-      snapshot: cfg.snapshot,
-      public: true,
-      autoStopInterval: AUTO_STOP_MINUTES,
-      autoArchiveInterval: 60 * 24,
-      labels: { agentkit: "1", chat: chatId },
-    },
-    { timeout: 180 },
-  );
+  // Daytona may still hold a sandbox for this chat even when our row is gone.
+  const adopted = await adoptExistingRemote(daytona, chatId, apiKey);
+  if (adopted) return persist(adopted);
+
+  const create = () =>
+    daytona.create(
+      {
+        snapshot: cfg.snapshot,
+        public: true,
+        autoStopInterval: AUTO_STOP_MINUTES,
+        autoArchiveInterval: 60 * 24,
+        labels: { agentkit: "1", chat: chatId },
+      },
+      { timeout: 180 },
+    );
+
+  let raw: DaytonaSandbox;
+  try {
+    raw = await create();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/limit exceeded|quota/i.test(message)) throw error;
+    const freed = await purgeAbandonedSandboxes(daytona);
+    if (freed === 0) {
+      throw new Error(
+        `${message} — no idle sandbox left to reclaim. Delete unused sandboxes in Daytona or pick a smaller size in Settings → Sandbox.`,
+      );
+    }
+    raw = await create();
+  }
+
   const handle = new SandboxHandle(raw, apiKey);
   await runShell(handle, `mkdir -p ${WORKDIR}`, { timeoutMs: 30_000 });
   await assertHealthyShell(handle);
+  return persist(handle);
+}
 
-  const { data: created } = await db
+/** Delete AgentKit sandboxes no chat claims anymore, freeing the memory quota. */
+async function purgeAbandonedSandboxes(daytona: Daytona): Promise<number> {
+  const { data: rows } = await db
     .from("sandbox_sessions")
-    .insert({
-      chat_id: chatId,
-      sandbox_id: raw.id,
-      template: cfg.snapshot,
-      status: "running",
-    } as never)
-    .select("id")
-    .single();
-
-  return { sandbox: handle, sessionId: created?.id ?? "" };
+    .select("sandbox_id")
+    .eq("status", "running");
+  const claimed = new Set((rows ?? []).map((r) => (r as { sandbox_id: string }).sandbox_id));
+  let freed = 0;
+  try {
+    for await (const sb of daytona.list({ labels: { agentkit: "1" } })) {
+      if (claimed.has(sb.id)) continue;
+      await destroySandbox(sb as unknown as { delete?: () => Promise<unknown> });
+      freed++;
+    }
+  } catch {
+    return freed;
+  }
+  return freed;
 }
 
 const RECOVERABLE_SHELL_ERRORS = [
