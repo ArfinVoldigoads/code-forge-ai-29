@@ -243,18 +243,20 @@ export function ChatView({ chatId }: { chatId: string }) {
             />
           ))}
 
-          {streaming && (
+          {showLive && (
             <div className="space-y-2">
               <Timeline blocks={live.timeline} chatId={chatId} />
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {live.phaseLabel ||
-                  (live.phase === "acting"
-                    ? "Working in the sandbox…"
-                    : live.phase === "thinking"
-                      ? "Thinking…"
-                      : "Working…")}
-              </div>
+              {streaming && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {live.phaseLabel ||
+                    (live.phase === "acting"
+                      ? "Working in the sandbox…"
+                      : live.phase === "thinking"
+                        ? "Thinking…"
+                        : "Working…")}
+                </div>
+              )}
             </div>
           )}
 
