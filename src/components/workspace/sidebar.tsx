@@ -190,36 +190,39 @@ export function ChatSidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col bg-sidebar">
-      <div className="flex items-center gap-2 border-b border-sidebar-border px-3 py-3">
-        <Terminal className="h-5 w-5 text-primary" />
-        <span className="font-mono text-sm font-semibold tracking-tight">agentkit</span>
+      <div className="flex items-center gap-2 px-4 py-4">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground text-background">
+          <Terminal className="h-4 w-4" />
+        </span>
+        <span className="font-display text-sm font-semibold tracking-tight">agentkit</span>
       </div>
 
-      <div className="space-y-2 p-3">
-        <Button className="w-full justify-start" onClick={() => create.mutate()}>
+      <div className="space-y-2 px-3 pb-3">
+        <Button className="h-10 w-full justify-start rounded-lg" onClick={() => create.mutate()}>
           <Plus className="mr-2 h-4 w-4" /> New chat
         </Button>
         <div className="relative">
-          <Search className="absolute top-2.5 left-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute top-3 left-3 h-4 w-4 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search chats"
             aria-label="Search chats"
-            className="h-9 pl-8 text-sm"
+            className="h-10 rounded-lg border-sidebar-border bg-background/40 pl-9 text-sm"
           />
         </div>
       </div>
 
-      <div className="scroll-thin flex-1 space-y-4 overflow-y-auto px-2 pb-3">
+      <div className="scroll-thin flex-1 space-y-5 overflow-y-auto px-2 pb-3">
         {pinned.length > 0 && (
           <section>
-            <h2 className="px-2 pb-1 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+            <h2 className="px-3 pb-1.5 text-[10px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
               Pinned
             </h2>
             <div className="space-y-0.5">{pinned.map(renderRow)}</div>
           </section>
         )}
+
         <section>
           {pinned.length > 0 && (
             <h2 className="px-2 pb-1 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
