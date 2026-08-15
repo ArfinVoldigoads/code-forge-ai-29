@@ -279,9 +279,11 @@ async function adoptExistingRemote(
   chatId: string,
   apiKey: string,
 ): Promise<SandboxHandle | null> {
-  let found: DaytonaSandbox[] = [];
+  const found: DaytonaSandbox[] = [];
   try {
-    found = await daytona.list({ agentkit: "1", chat: chatId });
+    for await (const sb of daytona.list({ labels: { agentkit: "1", chat: chatId } })) {
+      found.push(sb);
+    }
   } catch {
     return null;
   }
