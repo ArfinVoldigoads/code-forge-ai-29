@@ -85,6 +85,8 @@ export type StreamEvent =
   | { type: "step-text"; text: string }
   | { type: "image"; id: string; url: string; caption?: string }
   | { type: "secret-request"; id: string; reason: string; keys: SecretRequestKey[] }
+  | { type: "ask-user"; id: string; title?: string; questions: AskUserQuestion[] }
+  | { type: "progress"; id: string; title?: string; steps: ProgressStep[] }
   | { type: "assistant-delta"; text: string }
   | { type: "assistant-finish"; messageId: string }
   | { type: "error"; message: string }
