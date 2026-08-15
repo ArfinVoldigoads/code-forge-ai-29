@@ -6,9 +6,9 @@ export const sandboxStatus = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const { requireUnlocked } = await import("./gate.server");
     await requireUnlocked();
-    const { getE2BKey, getSandboxForChat } = await import("./e2b.server");
+    const { getSandboxApiKey, getSandboxForChat } = await import("./daytona.server");
     const { db } = await import("./db.server");
-    const apiKey = await getE2BKey();
+    const apiKey = await getSandboxApiKey();
     const { data: row } = await db
       .from("sandbox_sessions")
       .select("sandbox_id, status, last_active_at")
@@ -43,8 +43,8 @@ export const heartbeatSandbox = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireUnlocked } = await import("./gate.server");
     await requireUnlocked();
-    const { getE2BKey, getSandboxForChat } = await import("./e2b.server");
-    const apiKey = await getE2BKey();
+    const { getSandboxApiKey, getSandboxForChat } = await import("./daytona.server");
+    const apiKey = await getSandboxApiKey();
     if (!apiKey) return { alive: false, sandboxId: null };
     try {
       const { sandbox } = await getSandboxForChat(data.chatId, apiKey);
@@ -62,13 +62,13 @@ export const listDir = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getSandboxSession } = await import("./sandbox-ops.server");
     const { sandbox } = await getSandboxSession(data.chatId);
-    const { resolvePath } = await import("./e2b.server");
-    const entries = await sandbox.files.list(resolvePath(data.path));
+    
+    const entries = await sandbox.files.list(data.path);
     return {
       path: data.path,
       entries: entries
-        .map((e) => ({ name: e.name, type: (e.type ?? "file") as string }))
-        .sort((a, b) =>
+        .map((e: { name: string; type: string }) => ({ name: e.name, type: e.type }))
+        .sort((a: { name: string; type: string }, b: { name: string; type: string }) =>
           a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1,
         ),
     };
@@ -81,8 +81,8 @@ export const readSandboxFile = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getSandboxSession } = await import("./sandbox-ops.server");
     const { sandbox } = await getSandboxSession(data.chatId);
-    const { resolvePath } = await import("./e2b.server");
-    const content = await sandbox.files.read(resolvePath(data.path));
+    
+    const content = await sandbox.files.read(data.path);
     return { path: data.path, content: content.slice(0, 200_000) };
   });
 
@@ -95,8 +95,8 @@ export const writeSandboxFile = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getSandboxSession } = await import("./sandbox-ops.server");
     const { sandbox } = await getSandboxSession(data.chatId);
-    const { resolvePath } = await import("./e2b.server");
-    await sandbox.files.write(resolvePath(data.path), data.content);
+    
+    await sandbox.files.write(data.path, data.content);
     return { ok: true as const };
   });
 
@@ -115,13 +115,13 @@ export const runCli = createServerFn({ method: "POST" })
     const { getSandboxSession } = await import("./sandbox-ops.server");
     const { sandbox, sessionId } = await getSandboxSession(data.chatId);
     const {
-      getE2BKey,
+      getSandboxApiKey,
       isRecoverableShellFailure,
       recreateSandboxForChat,
       resolvePath,
       WORKDIR,
       runShell,
-    } = await import("./e2b.server");
+    } = await import("./daytona.server");
     const { db } = await import("./db.server");
     const cwd = data.cwd ? resolvePath(data.cwd) : WORKDIR;
     const clip = (t: string) => (t.length > 20000 ? `${t.slice(0, 20000)}\n…truncated` : t);
@@ -130,7 +130,7 @@ export const runCli = createServerFn({ method: "POST" })
     let result = await runShell(activeSandbox, data.command, { cwd, timeoutMs: 180_000 });
     let recovered = false;
     if (isRecoverableShellFailure(result)) {
-      const apiKey = await getE2BKey();
+      const apiKey = await getSandboxApiKey();
       if (apiKey) {
         const replacement = await recreateSandboxForChat(data.chatId, apiKey);
         activeSandbox = replacement.sandbox;
@@ -199,16 +199,16 @@ export const startPreview = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getSandboxSession } = await import("./sandbox-ops.server");
     const { sandbox } = await getSandboxSession(data.chatId);
-    const { WORKDIR, shellCommand, runShell } = await import("./e2b.server");
+    const { WORKDIR, runBackground, runShell } = await import("./daytona.server");
     const port = data.port;
     const existing = await runShell(
       sandbox,
       `curl -fsS --max-time 2 http://127.0.0.1:${port} >/dev/null`,
       { cwd: WORKDIR, timeoutMs: 5_000 },
     );
-    if (existing.exitCode === 0) return { url: `https://${sandbox.getHost(port)}`, port };
+    if (existing.exitCode === 0) return { url: await sandbox.previewUrl(port), port };
     const command = `if [ -f package.json ]; then\n  if [ -f bun.lockb ] || [ -f bun.lock ]; then bun run dev -- --host 0.0.0.0 --port ${port};\n  elif [ -f pnpm-lock.yaml ]; then pnpm dev -- --host 0.0.0.0 --port ${port};\n  else npm run dev -- --host 0.0.0.0 --port ${port}; fi\nelif [ -f index.html ]; then python3 -m http.server ${port} --bind 0.0.0.0;\nelse echo 'No web project found. Ask the agent to create one first.' >&2; exit 1; fi`;
-    await sandbox.commands.run(shellCommand(command), { cwd: WORKDIR, background: true });
+    await runBackground(sandbox, command);
     const ready = await runShell(
       sandbox,
       `for i in $(seq 1 20); do curl -fsS --max-time 2 http://127.0.0.1:${port} >/dev/null && exit 0; sleep 1; done; exit 1`,
@@ -217,5 +217,16 @@ export const startPreview = createServerFn({ method: "POST" })
     if (ready.exitCode !== 0) {
       throw new Error(`Preview did not start on port ${port}. Check the Console for the server error.`);
     }
-    return { url: `https://${sandbox.getHost(port)}`, port };
+    return { url: await sandbox.previewUrl(port), port };
+  });
+
+/** Boot the VNC desktop for this chat and return the public noVNC URL. */
+export const startDesktop = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ chatId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    const { getSandboxSession } = await import("./sandbox-ops.server");
+    const { sandbox } = await getSandboxSession(data.chatId);
+    await sandbox.raw.computerUse.start().catch(() => undefined);
+    const url = await sandbox.previewUrl(6080);
+    return { url };
   });

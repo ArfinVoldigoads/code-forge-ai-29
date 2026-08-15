@@ -9,7 +9,7 @@ const TABS = [
   { to: "/settings/skills", label: "Skills" },
   { to: "/settings/search", label: "Search" },
   { to: "/settings/integrations", label: "Integrations" },
-  { to: "/settings/e2b", label: "E2B" },
+  { to: "/settings/sandbox", label: "Sandbox" },
 
 ] as const;
 
@@ -27,7 +27,7 @@ export const Route = createFileRoute("/settings")({
       { title: "Settings · agentkit workspace" },
       {
         name: "description",
-        content: "Configure AI providers, models, agent skills and the E2B sandbox key.",
+        content: "Configure AI providers, models, agent skills and the Daytona sandbox engine.",
       },
       { property: "og:title", content: "Settings · agentkit" },
       {
