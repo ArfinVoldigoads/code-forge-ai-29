@@ -111,11 +111,12 @@ export function Composer({
   }
 
   return (
-    <div className="safe-bottom bg-background/95 px-3 pt-2 pb-3 backdrop-blur">
+    <div className="safe-bottom bg-gradient-to-t from-background via-background to-transparent px-3 pt-3 pb-3">
       <div
-        className={`mx-auto w-full max-w-3xl rounded-2xl border bg-panel/80 p-2 shadow-lg transition-colors ${
-          dragging ? "border-primary" : "border-border/70"
+        className={`mx-auto w-full max-w-3xl rounded-3xl border bg-panel/70 p-2 shadow-[0_8px_30px_oklch(0_0_0/0.5)] backdrop-blur transition-colors ${
+          dragging ? "border-foreground/60" : "border-border/60"
         }`}
+
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
@@ -183,7 +184,7 @@ export function Composer({
           }}
           placeholder="Jelaskan tugasnya… Enter kirim, Shift+Enter baris baru."
           aria-label="Message"
-          className="max-h-48 min-h-[64px] resize-none border-0 bg-transparent px-2 text-base shadow-none focus-visible:ring-0 sm:text-sm"
+          className="max-h-48 min-h-[64px] resize-none border-0 bg-transparent px-3 text-base leading-relaxed shadow-none focus-visible:ring-0 sm:text-[0.9375rem]"
           maxLength={30000}
         />
 
@@ -203,7 +204,7 @@ export function Composer({
             size="icon"
             variant="ghost"
             aria-label="Lampirkan file"
-            className="h-9 w-9 shrink-0 rounded-full"
+            className="h-10 w-10 shrink-0 rounded-full"
             onClick={() => fileRef.current?.click()}
           >
             <Paperclip className="h-4 w-4" />
@@ -211,9 +212,10 @@ export function Composer({
 
           <Select value={modelId ?? ""} onValueChange={onModelChange}>
             <SelectTrigger
-              className="h-9 min-w-0 flex-1 rounded-full border-border/70 text-xs sm:max-w-56"
+              className="h-9 min-w-0 flex-1 rounded-full border-border/60 bg-background/40 text-xs sm:max-w-56"
               aria-label="Model selector"
             >
+
               <SelectValue placeholder="Pilih model" />
             </SelectTrigger>
             <SelectContent>
@@ -230,7 +232,7 @@ export function Composer({
             <Button
               variant="secondary"
               onClick={onStop}
-              className="h-9 shrink-0 rounded-full px-4"
+              className="h-10 shrink-0 rounded-full px-4"
             >
               <Square className="mr-1.5 h-3.5 w-3.5" /> Stop
             </Button>
@@ -240,11 +242,12 @@ export function Composer({
               onClick={submit}
               aria-label="Kirim"
               disabled={disabled || uploading > 0 || (!canSend && files.length === 0)}
-              className="h-9 w-9 shrink-0 rounded-full"
+              className="h-10 w-10 shrink-0 rounded-full"
             >
               <Send className="h-4 w-4" />
             </Button>
           )}
+
         </div>
       </div>
     </div>

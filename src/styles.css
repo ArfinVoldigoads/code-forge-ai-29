@@ -5,10 +5,11 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design system: dark technical developer workspace.
- * Five colors total: charcoal background, slate panels, electric blue accent,
- * muted green success, high-contrast text. Two families: IBM Plex Sans / Mono.
+ * Design system: monochrome workspace.
+ * Pure neutral greyscale — ink black surfaces, paper white ink, no hue.
+ * Type: Space Grotesk (display) / DM Sans (body) / JetBrains Mono (code).
  */
+
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 3px);
@@ -16,6 +17,7 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --font-sans: var(--font-sans-stack);
+  --font-display: var(--font-display-stack);
   --font-mono: var(--font-mono-stack);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -51,42 +53,44 @@
 }
 
 :root {
-  --radius: 0.5rem;
-  --font-sans-stack: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono-stack: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --radius: 0.75rem;
+  --font-sans-stack: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display-stack: "Space Grotesk", "DM Sans", ui-sans-serif, sans-serif;
+  --font-mono-stack: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --background: oklch(0.165 0.008 260);
-  --foreground: oklch(0.955 0.004 260);
-  --panel: oklch(0.212 0.01 260);
-  --panel-foreground: oklch(0.955 0.004 260);
-  --card: oklch(0.212 0.01 260);
-  --card-foreground: oklch(0.955 0.004 260);
-  --popover: oklch(0.212 0.01 260);
-  --popover-foreground: oklch(0.955 0.004 260);
-  --primary: oklch(0.66 0.175 253);
-  --primary-foreground: oklch(0.16 0.01 260);
-  --secondary: oklch(0.262 0.011 260);
-  --secondary-foreground: oklch(0.955 0.004 260);
-  --muted: oklch(0.245 0.01 260);
-  --muted-foreground: oklch(0.705 0.012 260);
-  --accent: oklch(0.28 0.014 260);
-  --accent-foreground: oklch(0.955 0.004 260);
-  --success: oklch(0.7 0.115 162);
-  --success-foreground: oklch(0.16 0.01 260);
-  --destructive: oklch(0.62 0.2 25);
-  --destructive-foreground: oklch(0.97 0.005 260);
-  --border: oklch(0.295 0.012 260);
-  --input: oklch(0.295 0.012 260);
-  --ring: oklch(0.66 0.175 253);
-  --sidebar: oklch(0.185 0.009 260);
-  --sidebar-foreground: oklch(0.93 0.005 260);
-  --sidebar-primary: oklch(0.66 0.175 253);
-  --sidebar-primary-foreground: oklch(0.16 0.01 260);
-  --sidebar-accent: oklch(0.26 0.011 260);
-  --sidebar-accent-foreground: oklch(0.955 0.004 260);
-  --sidebar-border: oklch(0.28 0.012 260);
-  --sidebar-ring: oklch(0.66 0.175 253);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.975 0 0);
+  --panel: oklch(0.196 0 0);
+  --panel-foreground: oklch(0.975 0 0);
+  --card: oklch(0.196 0 0);
+  --card-foreground: oklch(0.975 0 0);
+  --popover: oklch(0.196 0 0);
+  --popover-foreground: oklch(0.975 0 0);
+  --primary: oklch(0.975 0 0);
+  --primary-foreground: oklch(0.145 0 0);
+  --secondary: oklch(0.255 0 0);
+  --secondary-foreground: oklch(0.975 0 0);
+  --muted: oklch(0.235 0 0);
+  --muted-foreground: oklch(0.7 0 0);
+  --accent: oklch(0.275 0 0);
+  --accent-foreground: oklch(0.975 0 0);
+  --success: oklch(0.88 0 0);
+  --success-foreground: oklch(0.145 0 0);
+  --destructive: oklch(0.72 0.05 25);
+  --destructive-foreground: oklch(0.145 0 0);
+  --border: oklch(0.29 0 0);
+  --input: oklch(0.29 0 0);
+  --ring: oklch(0.78 0 0);
+  --sidebar: oklch(0.115 0 0);
+  --sidebar-foreground: oklch(0.93 0 0);
+  --sidebar-primary: oklch(0.975 0 0);
+  --sidebar-primary-foreground: oklch(0.145 0 0);
+  --sidebar-accent: oklch(0.24 0 0);
+  --sidebar-accent-foreground: oklch(0.975 0 0);
+  --sidebar-border: oklch(0.245 0 0);
+  --sidebar-ring: oklch(0.78 0 0);
 }
+
 
 .dark {
   color-scheme: dark;
@@ -109,6 +113,13 @@
     overflow-x: hidden;
   }
 
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display-stack);
+    letter-spacing: -0.02em;
+  }
+
   code,
   pre,
   kbd,
@@ -120,14 +131,29 @@
     outline: 2px solid var(--color-ring);
     outline-offset: 2px;
   }
+
+  ::selection {
+    background: var(--color-foreground);
+    color: var(--color-background);
+  }
 }
 
 @utility panel-surface {
   background-color: var(--color-panel);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  box-shadow: 0 1px 2px oklch(0 0 0 / 0.35);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.4);
 }
+
+@utility font-display {
+  font-family: var(--font-display-stack);
+  letter-spacing: -0.02em;
+}
+
+@utility hairline {
+  border: 1px solid color-mix(in oklab, var(--color-border) 70%, transparent);
+}
+
 
 @utility safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
