@@ -281,7 +281,82 @@ export function buildAgentTools(ctx: Ctx) {
       },
     }),
 
+    set_progress: tool({
+      description:
+        "Show or update the visible step list for the current task. Call it once with all steps, then call it again with the same progressId to mark steps done. Keep 3-8 short user-facing steps in the user's language.",
+      inputSchema: z.object({
+        progressId: z.string().describe("Stable id for this progress card, reuse it on updates."),
+        title: z.string().optional(),
+        steps: z
+          .array(
+            z.object({
+              label: z.string(),
+              status: z.enum(["pending", "running", "done"]).default("pending"),
+            }),
+          )
+          .min(1)
+          .max(12),
+      }),
+      execute: async ({ progressId, title, steps }) => {
+        const event: StreamEvent = {
+          type: "progress",
+          id: progressId,
+          ...(title ? { title } : {}),
+          steps: steps.map((s) => ({ label: s.label, status: s.status })),
+        };
+        ctx.send(event);
+        ctx.record(event);
+        lastMark = Date.now();
+        return { ok: true, done: steps.filter((s) => s.status === "done").length };
+      },
+    }),
+
+    ask_user: tool({
+      description:
+        "Ask the user 1-3 short clarifying questions with concrete options when the request is genuinely ambiguous. A question card appears in the chat; stop your turn after calling it — the run resumes automatically with their answers.",
+      inputSchema: z.object({
+        title: z.string().optional(),
+        questions: z
+          .array(
+            z.object({
+              question: z.string(),
+              options: z
+                .array(z.object({ label: z.string(), description: z.string().optional() }))
+                .min(2)
+                .max(6),
+              allowOther: z.boolean().default(true),
+            }),
+          )
+          .min(1)
+          .max(3),
+      }),
+      execute: async ({ title, questions }) => {
+        const event: StreamEvent = {
+          type: "ask-user",
+          id: crypto.randomUUID(),
+          ...(title ? { title } : {}),
+          questions: questions.map((q) => ({
+            id: crypto.randomUUID(),
+            question: q.question,
+            options: q.options.map((o) => ({
+              label: o.label,
+              ...(o.description ? { description: o.description } : {}),
+            })),
+            allowOther: q.allowOther,
+          })),
+        };
+        ctx.send(event);
+        ctx.record(event);
+        lastMark = Date.now();
+        return {
+          asked: questions.map((q) => q.question),
+          note: "The question card is shown. End your turn now; the answers arrive as the next user message.",
+        };
+      },
+    }),
+
     /* ------------------------------ files ------------------------------ */
+
 
 
     write_file: tool({
