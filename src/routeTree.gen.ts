@@ -14,7 +14,6 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as UnlockRouteImport } from './routes/unlock'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ChatChatIdRouteImport } from './routes/chat.$chatId'
-import { Route as SettingsE2bRouteImport } from './routes/settings.e2b'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
@@ -45,11 +44,6 @@ const ChatChatIdRoute = ChatChatIdRouteImport.update({
   id: '/chat/$chatId',
   path: '/chat/$chatId',
   getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsE2bRoute = SettingsE2bRouteImport.update({
-  id: '/e2b',
-  path: '/e2b',
-  getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
   id: '/integrations',
@@ -83,7 +77,6 @@ export interface FileRoutesByFullPath {
   '/unlock': typeof UnlockRoute
   '/api/chat': typeof ApiChatRoute
   '/chat/$chatId': typeof ChatChatIdRoute
-  '/settings/e2b': typeof SettingsE2bRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
@@ -96,7 +89,6 @@ export interface FileRoutesByTo {
   '/unlock': typeof UnlockRoute
   '/api/chat': typeof ApiChatRoute
   '/chat/$chatId': typeof ChatChatIdRoute
-  '/settings/e2b': typeof SettingsE2bRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
@@ -110,7 +102,6 @@ export interface FileRoutesById {
   '/unlock': typeof UnlockRoute
   '/api/chat': typeof ApiChatRoute
   '/chat/$chatId': typeof ChatChatIdRoute
-  '/settings/e2b': typeof SettingsE2bRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/providers': typeof SettingsProvidersRoute
@@ -125,7 +116,6 @@ export interface FileRouteTypes {
     | '/unlock'
     | '/api/chat'
     | '/chat/$chatId'
-    | '/settings/e2b'
     | '/settings/integrations'
     | '/settings/models'
     | '/settings/providers'
@@ -138,7 +128,6 @@ export interface FileRouteTypes {
     | '/unlock'
     | '/api/chat'
     | '/chat/$chatId'
-    | '/settings/e2b'
     | '/settings/integrations'
     | '/settings/models'
     | '/settings/providers'
@@ -151,7 +140,6 @@ export interface FileRouteTypes {
     | '/unlock'
     | '/api/chat'
     | '/chat/$chatId'
-    | '/settings/e2b'
     | '/settings/integrations'
     | '/settings/models'
     | '/settings/providers'
@@ -204,13 +192,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatChatIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/e2b': {
-      id: '/settings/e2b'
-      path: '/e2b'
-      fullPath: '/settings/e2b'
-      preLoaderRoute: typeof SettingsE2bRouteImport
-      parentRoute: typeof SettingsRoute
-    }
     '/settings/integrations': {
       id: '/settings/integrations'
       path: '/integrations'
@@ -250,7 +231,6 @@ declare module '@tanstack/react-router' {
 }
 
 interface SettingsRouteChildren {
-  SettingsE2bRoute: typeof SettingsE2bRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
@@ -259,7 +239,6 @@ interface SettingsRouteChildren {
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
-  SettingsE2bRoute: SettingsE2bRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsModelsRoute: SettingsModelsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,

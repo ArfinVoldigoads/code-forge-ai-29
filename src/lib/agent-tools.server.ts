@@ -565,6 +565,218 @@ export function buildAgentTools(ctx: Ctx) {
         }),
     }),
 
+    /* -------------------------- sandbox self-care ----------------------- */
+
+    sandbox_info: tool({
+      description:
+        "Inspect YOUR sandbox: state, allocated CPU/memory/disk and current usage. Call this when something feels slow, a build gets killed, or before resizing.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        run("sandbox_info", {}, async () => {
+          const active = await sandbox();
+          const raw = active.sandbox.raw;
+          await raw.refreshData().catch(() => {});
+          let usage: Json = null;
+          try {
+            const m = await raw.getMetricsLatest();
+            usage = {
+              cpuUsedPct: m.cpuUsedPct ?? null,
+              memUsed: m.memUsed ?? null,
+              memTotal: m.memTotal ?? null,
+              diskUsed: m.diskUsed ?? null,
+              diskTotal: m.diskTotal ?? null,
+            } as Json;
+          } catch {
+            /* metrics are best-effort */
+          }
+          return {
+            sandboxId: raw.id,
+            state: raw.state ?? null,
+            cpu: raw.cpu ?? null,
+            memoryGiB: raw.memory ?? null,
+            diskGiB: raw.disk ?? null,
+            public: raw.public ?? null,
+            snapshot: raw.snapshot ?? null,
+            usage,
+          } as Json;
+        }),
+    }),
+
+    sandbox_resize: tool({
+      description:
+        "Give YOUR OWN sandbox more CPU/RAM/disk when a build is killed, memory runs out, or disk fills up. Only affects the sandbox of this chat. Max 8 vCPU / 16 GiB RAM / 50 GiB disk.",
+      inputSchema: z.object({
+        cpu: z.number().int().min(1).max(8),
+        memory: z.number().int().min(1).max(16).describe("RAM in GiB"),
+        disk: z.number().int().min(3).max(50).describe("disk in GiB"),
+        reason: z.string().optional(),
+      }),
+      execute: async ({ cpu, memory, disk, reason }) =>
+        run("sandbox_resize", { cpu, memory, disk, reason: reason ?? null }, async () => {
+          const active = await sandbox();
+          const { assertOwnedByChat } = await import("@/lib/daytona.server");
+          await assertOwnedByChat(ctx.chatId, active.sandbox.sandboxId);
+          const raw = active.sandbox.raw;
+          await raw.resize({ cpu, memory, disk }, 300);
+          await raw.waitForResizeComplete(300).catch(() => {});
+          await raw.refreshData().catch(() => {});
+          return {
+            resized: true,
+            cpu: raw.cpu ?? cpu,
+            memoryGiB: raw.memory ?? memory,
+            diskGiB: raw.disk ?? disk,
+          };
+        }),
+    }),
+
+    sandbox_restart: tool({
+      description:
+        "Restart YOUR sandbox when it is wedged (hung processes, broken shell). Files on disk survive. Dev servers must be started again afterwards.",
+      inputSchema: z.object({ reason: z.string().optional() }),
+      execute: async ({ reason }) =>
+        run("sandbox_restart", { reason: reason ?? null }, async () => {
+          const active = await sandbox();
+          const { assertOwnedByChat } = await import("@/lib/daytona.server");
+          await assertOwnedByChat(ctx.chatId, active.sandbox.sandboxId);
+          const raw = active.sandbox.raw;
+          await raw.stop(180).catch(() => {});
+          await raw.start(180);
+          await raw.waitUntilStarted(180).catch(() => {});
+          return { sandboxId: raw.id, state: raw.state ?? "started" };
+        }),
+    }),
+
+    sandbox_network_check: tool({
+      description:
+        "Diagnose outbound internet from inside the sandbox (DNS, HTTPS, npm registry). If access is blocked, this clears the network restrictions on your own sandbox and re-tests.",
+      inputSchema: z.object({ url: z.string().url().optional() }),
+      execute: async ({ url }) =>
+        run("sandbox_network_check", { url: url ?? null }, async () => {
+          const target = url ?? "https://registry.npmjs.org/-/ping";
+          const probe = () =>
+            shell(
+              `getent hosts registry.npmjs.org || true; curl -s -o /dev/null -w 'http=%{http_code} time=%{time_total}\n' --max-time 12 ${JSON.stringify(target)}`,
+              { timeoutMs: 30_000 },
+            );
+          let out = await probe();
+          let unblocked = false;
+          if (out.exitCode !== 0 || !/http=[23]/.test(out.stdout)) {
+            const active = await sandbox();
+            const { assertOwnedByChat } = await import("@/lib/daytona.server");
+            await assertOwnedByChat(ctx.chatId, active.sandbox.sandboxId);
+            await active.sandbox.raw
+              .updateNetworkSettings({ networkBlockAll: false, networkAllowList: "0.0.0.0/0" })
+              .catch(() => {});
+            unblocked = true;
+            out = await probe();
+          }
+          return {
+            target,
+            ok: /http=[23]/.test(out.stdout),
+            unblockedNetwork: unblocked,
+            detail: clip(out.stdout || out.stderr),
+          };
+        }),
+    }),
+
+    /* ------------------------------ desktop ----------------------------- */
+
+    desktop_start: tool({
+      description:
+        "Start the sandbox desktop (Xvfb + XFCE + VNC) and return a public HTTPS noVNC URL. Use it to run GUI apps or to click through a real browser. The user can watch the same screen in the Desktop tab.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        run("desktop_start", {}, async () => {
+          const active = await sandbox();
+          await active.sandbox.raw.computerUse.start();
+          const url = await active.sandbox.previewUrl(6080);
+          const info = await active.sandbox.raw.computerUse.display.getInfo().catch(() => null);
+          return {
+            vncUrl: url,
+            screens: (info?.displays?.length ?? null) as Json,
+          } as Json;
+        }),
+    }),
+
+    desktop_screenshot: tool({
+      description:
+        "Capture the sandbox desktop screen and attach it to the chat. Use after desktop_start to see what a GUI app or browser is showing.",
+      inputSchema: z.object({ caption: z.string().optional() }),
+      execute: async ({ caption }) =>
+        run("desktop_screenshot", { caption: caption ?? null }, async () => {
+          const active = await sandbox();
+          const shot = await active.sandbox.raw.computerUse.screenshot.takeCompressed({
+            format: "png",
+            showCursor: true,
+          });
+          if (!shot.screenshot) throw new Error("Desktop returned an empty screenshot — is the desktop started?");
+          const bytes = Buffer.from(shot.screenshot.replace(/^data:image\/\w+;base64,/, ""), "base64");
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const key = `${ctx.chatId}/${Date.now()}-desktop.png`;
+          const { error: upErr } = await supabaseAdmin.storage
+            .from("screenshots")
+            .upload(key, bytes, { contentType: "image/png", upsert: true });
+          if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+          const { data: signed } = await supabaseAdmin.storage
+            .from("screenshots")
+            .createSignedUrl(key, 60 * 60 * 24 * 30);
+          if (signed?.signedUrl) {
+            const image: StreamEvent = {
+              type: "image",
+              id: crypto.randomUUID(),
+              url: signed.signedUrl,
+              caption: caption ?? "Sandbox desktop",
+            };
+            ctx.send(image);
+            ctx.record(image);
+          }
+          return { url: signed?.signedUrl ?? null };
+        }),
+    }),
+
+    desktop_input: tool({
+      description:
+        "Control the sandbox desktop: click coordinates, type text, or press a key combination. Take a desktop_screenshot first so you know where to click.",
+      inputSchema: z.object({
+        action: z.enum(["click", "double_click", "type", "key", "scroll", "move"]),
+        x: z.number().int().optional(),
+        y: z.number().int().optional(),
+        text: z.string().optional(),
+        keys: z.string().optional().describe("hotkey, e.g. 'ctrl+l' or 'Return'"),
+        direction: z.enum(["up", "down"]).optional(),
+        amount: z.number().int().min(1).max(20).optional(),
+      }),
+      execute: async ({ action, x, y, text, keys, direction, amount }) =>
+        run("desktop_input", { action, x: x ?? null, y: y ?? null }, async () => {
+          const active = await sandbox();
+          const cu = active.sandbox.raw.computerUse;
+          switch (action) {
+            case "click":
+            case "double_click":
+              if (x === undefined || y === undefined) throw new Error("click needs x and y");
+              await cu.mouse.click(x, y, "left", action === "double_click");
+              break;
+            case "move":
+              if (x === undefined || y === undefined) throw new Error("move needs x and y");
+              await cu.mouse.move(x, y);
+              break;
+            case "scroll":
+              if (x === undefined || y === undefined) throw new Error("scroll needs x and y");
+              await cu.mouse.scroll(x, y, direction ?? "down", amount ?? 3);
+              break;
+            case "type":
+              if (!text) throw new Error("type needs text");
+              await cu.keyboard.type(text);
+              break;
+            case "key":
+              if (!keys) throw new Error("key needs keys");
+              await cu.keyboard.hotkey(keys);
+              break;
+          }
+          return { ok: true, action };
+        }),
+    }),
+
     /* ------------------------------ skills ------------------------------ */
 
     list_skills: tool({
