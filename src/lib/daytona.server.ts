@@ -253,10 +253,19 @@ export type Session = { sandbox: SandboxHandle; sessionId: string };
 const SHELL_HEALTH_MARKER = "__agentkit_shell_ok__";
 
 async function assertHealthyShell(handle: SandboxHandle): Promise<void> {
-  const result = await runShell(handle, `printf '${SHELL_HEALTH_MARKER}'`, { timeoutMs: 20_000 });
-  if (result.exitCode !== 0 || !result.stdout.includes(SHELL_HEALTH_MARKER)) {
-    throw new Error(result.stderr || "Sandbox shell health check failed");
+  // The sandbox agent needs a moment after start/resume before it accepts exec.
+  let last: ShellResult = { exitCode: -1, stdout: "", stderr: "no attempt" };
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await sleep(1500);
+    await handle.raw.fs.createFolder(WORKDIR, "755").catch(() => {});
+    last = await runShell(handle, `printf '${SHELL_HEALTH_MARKER}'`, { timeoutMs: 20_000 });
+    if (last.exitCode === 0 && last.stdout.includes(SHELL_HEALTH_MARKER)) return;
+    if (isDeadSandboxError(last.stderr)) break;
   }
+  const detail = [last.stderr, last.stdout].filter(Boolean).join(" ").trim().slice(0, 400);
+  throw new Error(
+    `Sandbox shell health check failed (exit ${last.exitCode})${detail ? `: ${detail}` : ""}`,
+  );
 }
 
 /** Reuse the chat's running sandbox, resuming or creating one when needed. */
