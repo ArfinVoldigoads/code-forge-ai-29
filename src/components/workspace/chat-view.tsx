@@ -163,12 +163,30 @@ export function ChatView({ chatId }: { chatId: string }) {
       >
         <div className="mx-auto w-full max-w-3xl space-y-6">
           {messages.length === 0 && !streaming && (
-            <div className="panel-surface p-5">
-              <h1 className="mb-1 text-base font-semibold">Start a coding task</h1>
-              <p className="text-sm text-muted-foreground">
-The agent thinks, explores the sandbox, edits code, runs it, fixes what breaks and verifies
-                the result — automatically, without waiting for approval between steps.
-              </p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <h1 className="text-xl font-semibold tracking-tight">Mau bangun apa hari ini?</h1>
+                <p className="text-sm text-muted-foreground">
+                  Agent berpikir, menjelajah sandbox, menulis kode, menjalankannya, memperbaiki yang
+                  gagal, lalu memverifikasi hasilnya — otomatis.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {[
+                  "Buat website portofolio dengan UI keren",
+                  "Scrape data produk dan simpan ke CSV",
+                  "Bikin API Express + tes dan jalankan",
+                ].map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => void send(example)}
+                    className="min-h-16 rounded-xl border border-border/70 bg-panel/60 p-3 text-left text-sm transition-colors hover:border-primary/50 hover:bg-accent/40"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -216,7 +234,8 @@ The agent thinks, explores the sandbox, edits code, runs it, fixes what breaks a
       </div>
 
       <Composer
-        onSend={send}
+        chatId={chatId}
+        onSend={(content, ids) => void send(content, ids)}
         onStop={stop}
         streaming={streaming}
         models={models}
@@ -224,6 +243,7 @@ The agent thinks, explores the sandbox, edits code, runs it, fixes what breaks a
         onModelChange={(id) => pickModel.mutate(id)}
         disabled={chatQuery.isLoading}
       />
+
     </div>
   );
 }
