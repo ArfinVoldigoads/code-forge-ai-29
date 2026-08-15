@@ -232,7 +232,7 @@ export function Composer({
             <Button
               variant="secondary"
               onClick={onStop}
-              className="h-9 shrink-0 rounded-full px-4"
+              className="h-10 shrink-0 rounded-full px-4"
             >
               <Square className="mr-1.5 h-3.5 w-3.5" /> Stop
             </Button>
@@ -242,11 +242,12 @@ export function Composer({
               onClick={submit}
               aria-label="Kirim"
               disabled={disabled || uploading > 0 || (!canSend && files.length === 0)}
-              className="h-9 w-9 shrink-0 rounded-full"
+              className="h-10 w-10 shrink-0 rounded-full"
             >
               <Send className="h-4 w-4" />
             </Button>
           )}
+
         </div>
       </div>
     </div>
