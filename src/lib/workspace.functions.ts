@@ -149,6 +149,7 @@ export const sendUserMessage = createServerFn({ method: "POST" })
         chatId: z.string().uuid(),
         content: z.string().trim().min(1).max(30000),
         requestId: z.string().uuid(),
+        attachmentIds: z.array(z.string().uuid()).max(10).optional(),
       })
       .parse(d),
   )
