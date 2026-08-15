@@ -198,6 +198,24 @@ export function Timeline({ blocks, chatId }: { blocks: TimelineBlock[]; chatId: 
               {...(block.caption ? { caption: block.caption } : {})}
             />
           );
+        if (block.kind === "ask")
+          return (
+            <AskUserCard
+              key={block.id}
+              chatId={chatId}
+              askId={block.id}
+              {...(block.title ? { title: block.title } : {})}
+              questions={block.questions}
+            />
+          );
+        if (block.kind === "progress")
+          return (
+            <ProgressCard
+              key={block.id}
+              {...(block.title ? { title: block.title } : {})}
+              steps={block.steps}
+            />
+          );
         return (
           <SecretForm key={block.id} chatId={chatId} reason={block.reason} keys={block.keys} />
         );
