@@ -106,9 +106,11 @@ export async function runShell(
   );
   try {
     if (!opts.onStdout && !opts.onStderr) {
+      // No cwd on purpose: the wrapper creates and enters WORKDIR itself, and
+      // passing a not-yet-existing directory makes the whole command fail.
       const res = await handle.raw.process.executeCommand(
         wrapped,
-        WORKDIR,
+        undefined,
         opts.envs,
         Math.ceil(timeoutMs / 1000),
       );
