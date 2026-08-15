@@ -1,52 +1,62 @@
-# Ganti Sandbox Engine: E2B → Daytona
+# Full Migrasi ke Daytona + Sandbox Self-Managed oleh AI
 
-## Hasil pengecekan (fakta dari dokumentasi Daytona)
+Keputusan: E2B dibuang sepenuhnya. Daytona jadi satu-satunya engine sandbox. Preview selalu publik HTTPS. AI punya akses mengelola sandbox-nya sendiri di Daytona (perbesar RAM, restart, benerin jaringan), tapi dipagari supaya tidak bisa menyentuh sandbox milik project/chat lain.
 
-Yang jadi keluhan kamu memang bisa diatur di Daytona, dan tidak bisa (tanpa custom template) di E2B:
+## Kenapa Daytona (hasil cek dokumentasi)
 
-| Kebutuhan | E2B (sekarang) | Daytona |
-| --- | --- | --- |
-| Atur RAM/CPU/disk | Harus bikin template sendiri; template `base` kecil | `resources: { cpu, memory, disk }` saat create. Default 1 vCPU / 1 GiB / 3 GiB, limit organisasi sampai **4 vCPU / 8 GiB RAM / 10 GiB disk** |
-| Sandbox cepat mati | Lease timeout, harus di-heartbeat terus | `autoStopInterval` bisa di-set `0` = **jalan terus tanpa auto-stop**, plus auto-archive / auto-delete terpisah |
-| Setelah mati, kerjaan hilang | Sandbox baru = kosong | **Pause/resume + archive**: filesystem (dan memory untuk VM sandbox) tetap tersimpan, bisa dilanjut |
-| Preview HTTPS publik | `getHost(port)` | `getPreviewLink(port)` → URL `https://{port}-{sandboxId}...`; kalau sandbox `public: true` **URL-nya publik tanpa token**, atau pakai signed URL |
-| Ubah resource di tengah jalan | Tidak ada | `resize` sandbox (CPU/memory) |
-| Ekstra | — | Snapshot/warm pool (start cepat), PTY terminal, log streaming, git ops, secrets |
-
-Kesimpulan: untuk use case AgentKit ini Daytona memang lebih cocok. Rekomendasi: pindah ke Daytona sebagai engine default.
+- Resource diatur saat create: `resources: { cpu, memory, disk }`. Default 1 vCPU / 1 GiB / 3 GiB, batas organisasi 4 vCPU / 8 GiB RAM / 10 GiB disk.
+- Bisa di-**resize** saat sandbox sudah jalan (CPU/memory naik tanpa kehilangan isi).
+- `autoStopInterval: 0` = sandbox jalan terus, tidak mati sendiri seperti lease E2B.
+- Pause/resume + archive: filesystem tetap tersimpan, kerjaan bisa dilanjut, bukan mulai dari nol.
+- Preview: `getPreviewLink(port)` → `https://{port}-{sandboxId}...`. Kalau sandbox dibuat `public: true`, URL-nya bisa dibuka siapa saja tanpa token.
+- Ekstra yang berguna: PTY terminal, log streaming, snapshot/warm pool (start cepat), git ops.
 
 ## Yang akan dibangun
 
-### 1. Lapisan provider sandbox
-Bikin satu antarmuka bersama (`SandboxDriver`) berisi operasi yang sudah dipakai agent: create/connect, jalankan shell, baca/tulis/list file, background process, preview URL, keep-alive, dan deteksi sandbox mati. Driver E2B yang ada dibungkus jadi implementasi pertama, lalu ditambah driver Daytona. Semua tool agent memanggil antarmuka ini, bukan SDK langsung — jadi tidak ada tool yang perlu ditulis ulang.
+### 1. Engine tunggal Daytona
+`src/lib/e2b.server.ts` diganti `src/lib/daytona.server.ts` dengan API internal yang sama seperti sekarang (create/connect, runShell, file ops, background process, preview URL, deteksi sandbox mati), sehingga seluruh tool agent tidak perlu ditulis ulang — hanya di-repoint. Wrapper shell yang sudah stabil (login shell + PATH lengkap, escaping argumen, exit code non-throw) dipertahankan.
 
-### 2. Driver Daytona
-- Create sandbox dari image/snapshot dengan `resources: { cpu, memory, disk }` yang diambil dari Settings.
-- `autoStopInterval: 0` supaya tidak mati sendiri; auto-archive dipakai sebagai pengaman biaya.
-- Reconnect ke sandbox lama; kalau statusnya `stopped`/`archived` → `start()` (resume) dulu, baru kalau benar-benar hilang bikin baru. Ini beda penting dari sekarang: sekarang sandbox mati = mulai dari nol.
-- Preview: `getPreviewLink(port)` untuk URL HTTPS; opsi "preview publik" di Settings mengatur `public: true`.
-- Shell wrapper (PATH login shell, escaping argumen, hasil non-zero tanpa throw) dipertahankan seperti versi E2B yang sudah stabil.
+Sandbox dibuat dengan:
+- resource default dari Settings (usulan awal: 2 vCPU / 4 GiB / 8 GiB),
+- `autoStopInterval: 0`,
+- `public: true`,
+- auto-archive sebagai pengaman biaya kalau benar-benar idle lama.
 
-### 3. Settings → Sandbox
-Halaman `Settings → E2B` diganti jadi `Settings → Sandbox`:
-- Pilih engine: Daytona (default) atau E2B.
-- API key Daytona + tombol Test connection (mask token seperti halaman Integrations).
-- Slider/field CPU, RAM, Disk (dibatasi 4 / 8 / 10 sesuai limit Daytona), target image/snapshot, dan toggle preview publik.
-- Info status sandbox aktif: id, state, resource terpasang, tombol Restart / Delete.
+### 2. Resume, bukan bikin ulang
+Saat sandbox untuk sebuah chat tidak aktif, urutannya: connect → kalau `stopped`/`archived` maka `start()` (resume, isi project tetap ada) → baru bikin baru kalau sandbox-nya sudah tidak ada. Ini menghilangkan masalah "sandbox mati, kerjaan hilang".
 
-### 4. Sesi & database
-Tabel `sandbox_sessions` dapat kolom `provider` dan `resources` supaya sesi lama (E2B) tetap terbaca dan sesi baru tahu engine-nya. Sesi lama dibiarkan, tidak dihapus.
+### 3. Preview publik
+`startPreview` memakai `getPreviewLink(port)`; URL publik ditampilkan di panel Preview dengan tombol salin dan "buka di tab baru", jadi bisa dibagikan langsung tanpa token.
 
-### 5. Recovery & heartbeat
-Logika self-healing yang sudah ada (`withSandbox`, recreate saat lease putus, sync ulang `.env`) dipakai ulang lewat driver. Untuk Daytona urutannya jadi: resume dulu → baru recreate kalau gagal. Heartbeat 60 detik tetap ada tapi jadi jauh lebih ringan karena tidak ada lease pendek.
+### 4. AI bisa mengurus sandbox-nya sendiri
+Tool baru untuk agent, semuanya terkunci ke sandbox milik chat yang sedang berjalan:
 
-### 6. Prompt agent
-Catatan RAM/disk aktual dimasukkan ke system prompt supaya agent tidak lagi menebak "OOM 478MB", dan preview HTTPS memakai URL Daytona.
+| Tool | Fungsi |
+| --- | --- |
+| `sandbox_info` | Lihat state, CPU/RAM/disk terpasang, pemakaian memory & disk aktual |
+| `sandbox_resize` | Naikkan CPU/RAM/disk saat mepet (dibatasi plafon organisasi 4/8/10) |
+| `sandbox_restart` | Stop lalu start ulang saat proses ngaco / port nyangkut |
+| `sandbox_network_check` | Diagnosa jaringan: DNS, HTTPS keluar, proxy/registry npm — plus perbaikan otomatis (ganti resolver, set registry, retry) |
+| `sandbox_recreate` | Pilihan terakhir: bikin sandbox bersih dan sinkron ulang `.env` |
 
-## Yang kamu perlu siapkan
-API key Daytona (dashboard Daytona → API Keys). Setelah plan ini disetujui, key-nya diisi lewat Settings → Sandbox, tidak ditaruh di kode.
+Pagar keamanan (di server, bukan cuma di prompt): setiap tool memvalidasi `sandboxId` harus milik `chatId` yang sedang aktif di tabel `sandbox_sessions`. Tidak ada tool "list semua sandbox" dan tidak ada tool hapus sandbox milik chat lain — permintaan seperti itu ditolak server dengan pesan jelas.
+
+Prompt agent ditambah aturan: kalau memory/disk mepet → `sandbox_info` lalu `sandbox_resize`, jangan menyerah; kalau internet gagal → `sandbox_network_check` lalu ulangi perintah; baru setelah beberapa cara berbeda gagal boleh lapor.
+
+### 5. Settings → Sandbox
+Halaman `Settings → E2B` diganti `Settings → Sandbox` (Daytona):
+- API key Daytona + Test connection (token dimask, tidak pernah dikirim balik ke UI).
+- Field CPU / RAM / Disk default (dibatasi 4 / 8 / 10) dan image/snapshot dasar.
+- Toggle preview publik (default aktif).
+- Status sandbox chat aktif: id, state, resource, tombol Restart / Recreate.
+
+### 6. Database
+Satu migrasi: kolom `provider`, `resources`, dan `preview_url` di `sandbox_sessions`; kredensial Daytona disimpan di `app_settings`. Sesi E2B lama ditandai `stopped` dan tidak dipakai lagi.
+
+## Yang kamu siapkan
+API key Daytona (dashboard Daytona → API Keys), diisi lewat Settings → Sandbox setelah plan disetujui. Tidak ada key di dalam kode.
 
 ## Catatan teknis
-- Paket baru: `@daytonaio/sdk`. E2B tetap terpasang selama masih jadi opsi engine.
-- File yang disentuh: `src/lib/e2b.server.ts` (jadi driver), file baru `src/lib/sandbox-driver.server.ts` + `src/lib/daytona.server.ts`, `src/lib/sandbox-ops.server.ts`, `src/lib/sandbox.functions.ts`, `src/lib/agent-tools.server.ts`, `src/lib/settings.functions.ts`, `src/routes/settings.e2b.tsx` → `settings.sandbox.tsx`, `src/routes/settings.tsx`, `src/routes/api/chat.ts`.
-- Satu migrasi database untuk kolom `provider` + `resources` di `sandbox_sessions` dan penyimpanan kredensial Daytona di `app_settings`.
+- Tambah paket `@daytonaio/sdk`; hapus paket `e2b` dan seluruh kode E2B (`e2b.server.ts`, route `settings.e2b.tsx`, key `e2b` di settings).
+- File yang disentuh: `src/lib/daytona.server.ts` (baru), `src/lib/sandbox-ops.server.ts`, `src/lib/sandbox.functions.ts`, `src/lib/agent-tools.server.ts`, `src/lib/settings.functions.ts`, `src/routes/settings.sandbox.tsx` (baru, menggantikan `settings.e2b.tsx`), `src/routes/settings.tsx`, `src/routes/api/chat.ts`, `src/components/workspace/sandbox-panel.tsx`.
+- Heartbeat tetap ada tapi jadi ringan (update `last_active_at`), karena tidak ada lease pendek yang harus dikejar.
