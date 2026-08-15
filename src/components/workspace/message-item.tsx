@@ -111,9 +111,10 @@ export function MessageItem({
         ) : (
           <>
             <AttachmentList attachments={message.attachments} />
-            <div className="max-w-[92%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-[0.9375rem] break-words whitespace-pre-wrap text-primary-foreground sm:max-w-[80%]">
+            <div className="max-w-[92%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-[0.9375rem] leading-relaxed break-words whitespace-pre-wrap text-primary-foreground sm:max-w-[80%]">
               {message.content}
             </div>
+
 
             <div className="flex items-center gap-1">
               {message.revision > 1 && (
