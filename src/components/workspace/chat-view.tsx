@@ -70,7 +70,7 @@ export function ChatView({ chatId }: { chatId: string }) {
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
-  async function send(raw: string) {
+  async function send(raw: string, attachmentIds: string[] = []) {
     const content = raw.trim();
     if (!content || streaming) return;
     if (!activeModelId) {
@@ -82,7 +82,9 @@ export function ChatView({ chatId }: { chatId: string }) {
       if (!chatQuery.data?.chat.modelId) {
         await updateChat({ data: { chatId, modelId: activeModelId } });
       }
-      await sendUserMessage({ data: { chatId, content, requestId: uuid() } });
+      await sendUserMessage({
+        data: { chatId, content, requestId: uuid(), ...(attachmentIds.length ? { attachmentIds } : {}) },
+      });
       await refresh();
       await start(chatId, uuid());
     } catch (error) {
@@ -104,9 +106,24 @@ export function ChatView({ chatId }: { chatId: string }) {
         `I saved ${names} in the environment. Continue the task from where you stopped.`,
       );
     }
+    // Same for the agent's in-chat question card: answering resumes the run.
+    function onAskAnswered(event: Event) {
+      const detail = (event as CustomEvent<{ chatId: string; text: string }>).detail;
+      if (!detail || detail.chatId !== chatId) return;
+      void sendRef.current(
+        detail.text
+          ? `Jawaban saya:\n${detail.text}\n\nLanjutkan tugasnya sekarang.`
+          : "Skip — pakai default paling masuk akal dan lanjutkan tugasnya sekarang.",
+      );
+    }
     window.addEventListener("agentkit:secrets-saved", onSecretsSaved);
-    return () => window.removeEventListener("agentkit:secrets-saved", onSecretsSaved);
+    window.addEventListener("agentkit:ask-answered", onAskAnswered);
+    return () => {
+      window.removeEventListener("agentkit:secrets-saved", onSecretsSaved);
+      window.removeEventListener("agentkit:ask-answered", onAskAnswered);
+    };
   }, [chatId]);
+
 
   async function retry(messageId: string) {
     if (streaming) return;
