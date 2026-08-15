@@ -43,12 +43,29 @@ Pagar keamanan (di server, bukan cuma di prompt): setiap tool memvalidasi `sandb
 
 Prompt agent ditambah aturan: kalau memory/disk mepet → `sandbox_info` lalu `sandbox_resize`, jangan menyerah; kalau internet gagal → `sandbox_network_check` lalu ulangi perintah; baru setelah beberapa cara berbeda gagal boleh lapor.
 
-### 5. Settings → Sandbox
+### 5. Desktop mode: AI bisa "melihat" dan memakai GUI (jawaban soal Windows)
+
+Hasil cek: Daytona punya **Computer Use + VNC**. Itu desktop beneran (Xvfb + xfce4 + noVNC) di dalam sandbox, dengan API mouse, keyboard, screenshot, dan screen recording. Jadi AI bisa buka browser di dalam sandbox, klik-klik sendiri, dan kirim screenshot hasil testing — tidak perlu install Playwright/Chromium manual seperti sekarang.
+
+Soal Windows: Daytona memang punya **VM sandbox Windows** (snapshot `windows-small` 1 vCPU/4 GiB, `windows-medium` 2/8, `windows-large` 4/16, disk 30–50 GiB) dan Computer Use juga jalan di Windows. Tapi untuk kerjaan AgentKit (Node/bun/web dev + preview) Windows lebih lambat, lebih mahal, dan resource-nya terkunci pada kelas snapshot. Rencananya:
+
+- **Default: Linux container** + Desktop mode (VNC/Computer Use) — inilah yang dipakai untuk preview dan testing visual.
+- **Windows VM: opsi per-chat** di Settings, dipakai hanya kalau memang butuh aplikasi/tooling Windows.
+
+Yang dibangun untuk desktop mode:
+- Tool agent `desktop_start` (nyalakan Xvfb/xfce4/VNC), `desktop_screenshot` (full screen atau region, dikirim ke chat seperti screenshot sekarang), `desktop_click` / `desktop_type` / `desktop_key` untuk berinteraksi, dan `desktop_open_url` untuk membuka preview di browser dalam sandbox.
+- Tab **Desktop** baru di panel workspace: viewer noVNC embedded, jadi kamu bisa menonton langsung AI-nya mengetik dan mengklik saat testing.
+- Tool `screenshot` yang lama dialihkan ke Computer Use, jadi masalah "Taking screenshot / stuck di ready" hilang.
+- Catatan: VNC hanya jalan di image default Daytona; kalau nanti pakai custom image, paket desktopnya harus ikut diinstall.
+
+### 6. Settings → Sandbox
 Halaman `Settings → E2B` diganti `Settings → Sandbox` (Daytona):
 - API key Daytona + Test connection (token dimask, tidak pernah dikirim balik ke UI).
-- Field CPU / RAM / Disk default (dibatasi 4 / 8 / 10) dan image/snapshot dasar.
-- Toggle preview publik (default aktif).
+- Runtime: Linux container (default) / Linux VM / Windows VM.
+- Field CPU / RAM / Disk default (dibatasi 4 / 8 / 10 untuk container) dan image/snapshot dasar.
+- Toggle preview publik (default aktif) dan toggle Desktop mode + resolusi VNC (`VNC_RESOLUTION`, hanya bisa diset saat sandbox dibuat).
 - Status sandbox chat aktif: id, state, resource, tombol Restart / Recreate.
+
 
 ### 6. Database
 Satu migrasi: kolom `provider`, `resources`, dan `preview_url` di `sandbox_sessions`; kredensial Daytona disimpan di `app_settings`. Sesi E2B lama ditandai `stopped` dan tidak dipakai lagi.
