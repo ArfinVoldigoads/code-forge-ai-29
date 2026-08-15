@@ -111,11 +111,12 @@ export function Composer({
   }
 
   return (
-    <div className="safe-bottom bg-background/95 px-3 pt-2 pb-3 backdrop-blur">
+    <div className="safe-bottom bg-gradient-to-t from-background via-background to-transparent px-3 pt-3 pb-3">
       <div
-        className={`mx-auto w-full max-w-3xl rounded-2xl border bg-panel/80 p-2 shadow-lg transition-colors ${
-          dragging ? "border-primary" : "border-border/70"
+        className={`mx-auto w-full max-w-3xl rounded-3xl border bg-panel/70 p-2 shadow-[0_8px_30px_oklch(0_0_0/0.5)] backdrop-blur transition-colors ${
+          dragging ? "border-foreground/60" : "border-border/60"
         }`}
+
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
