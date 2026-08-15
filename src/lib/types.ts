@@ -109,7 +109,9 @@ export type TimelineBlock =
   | { kind: "phase"; id: string; phase: string; message: string }
   | { kind: "tool"; id: string; tool: ToolEventState }
   | { kind: "image"; id: string; url: string; caption?: string }
-  | { kind: "secret"; id: string; reason: string; keys: SecretRequestKey[] };
+  | { kind: "secret"; id: string; reason: string; keys: SecretRequestKey[] }
+  | { kind: "ask"; id: string; title?: string; questions: AskUserQuestion[] }
+  | { kind: "progress"; id: string; title?: string; steps: ProgressStep[] };
 
 
 
