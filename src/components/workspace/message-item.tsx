@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { AttachmentList } from "./attachment-list";
 import { Markdown } from "./markdown";
 import { Timeline } from "./timeline";
 import { buildTimeline, timelineHasContent } from "@/lib/timeline";
