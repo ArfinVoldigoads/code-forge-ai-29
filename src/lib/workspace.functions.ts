@@ -178,6 +178,16 @@ export const sendUserMessage = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
 
+    if (data.attachmentIds?.length) {
+      await db
+        .from("message_attachments")
+        .update({ message_id: row.id } as never)
+        .in("id", data.attachmentIds)
+        .eq("chat_id", data.chatId);
+    }
+
+
+
     const { count } = await db
       .from("messages")
       .select("id", { count: "exact", head: true })
