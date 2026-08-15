@@ -67,13 +67,13 @@ Halaman `Settings → E2B` diganti `Settings → Sandbox` (Daytona):
 - Status sandbox chat aktif: id, state, resource, tombol Restart / Recreate.
 
 
-### 6. Database
-Satu migrasi: kolom `provider`, `resources`, dan `preview_url` di `sandbox_sessions`; kredensial Daytona disimpan di `app_settings`. Sesi E2B lama ditandai `stopped` dan tidak dipakai lagi.
+### 7. Database
+Satu migrasi: kolom `provider`, `runtime`, `resources`, dan `preview_url` di `sandbox_sessions`; kredensial Daytona disimpan di `app_settings`. Sesi E2B lama ditandai `stopped` dan tidak dipakai lagi.
 
 ## Yang kamu siapkan
 API key Daytona (dashboard Daytona → API Keys), diisi lewat Settings → Sandbox setelah plan disetujui. Tidak ada key di dalam kode.
 
 ## Catatan teknis
 - Tambah paket `@daytonaio/sdk`; hapus paket `e2b` dan seluruh kode E2B (`e2b.server.ts`, route `settings.e2b.tsx`, key `e2b` di settings).
-- File yang disentuh: `src/lib/daytona.server.ts` (baru), `src/lib/sandbox-ops.server.ts`, `src/lib/sandbox.functions.ts`, `src/lib/agent-tools.server.ts`, `src/lib/settings.functions.ts`, `src/routes/settings.sandbox.tsx` (baru, menggantikan `settings.e2b.tsx`), `src/routes/settings.tsx`, `src/routes/api/chat.ts`, `src/components/workspace/sandbox-panel.tsx`.
+- File yang disentuh: `src/lib/daytona.server.ts` (baru), `src/lib/desktop.server.ts` (baru, Computer Use), `src/lib/sandbox-ops.server.ts`, `src/lib/sandbox.functions.ts`, `src/lib/agent-tools.server.ts`, `src/lib/settings.functions.ts`, `src/routes/settings.sandbox.tsx` (baru, menggantikan `settings.e2b.tsx`), `src/routes/settings.tsx`, `src/routes/api/chat.ts`, `src/components/workspace/sandbox-panel.tsx` (tab Desktop).
 - Heartbeat tetap ada tapi jadi ringan (update `last_active_at`), karena tidak ada lease pendek yang harus dikejar.
