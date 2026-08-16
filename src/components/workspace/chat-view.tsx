@@ -272,8 +272,8 @@ export function ChatView({ chatId }: { chatId: string }) {
               key={message.id}
               message={message}
               chatId={chatId}
-              onEdit={edit}
-              onRetry={retry}
+              onEdit={onEdit}
+              onRetry={onRetry}
               busy={streaming}
             />
           ))}
