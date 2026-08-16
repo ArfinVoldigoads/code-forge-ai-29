@@ -53,6 +53,10 @@ const THINKING_RULES = `## Thinking protocol (mandatory, repeated)
 - Call \`set_progress\` again with the SAME progressId every time a step finishes or a new one starts,
   and one final time with every step "done" before your closing summary. Never skip this.
 - Only skip set_progress when the whole turn is a single short answer with no tool work.
+- NEVER end your turn while any step is still pending or running. Finishing step 1 of 5 is not finishing
+  the task — go straight into step 2 in the same turn. Five instructions means five completed steps.
+  The only legitimate pauses are ask_user and request_secret; otherwise keep working until every step is
+  done, then give the final explanation.
 
 ## Decision cycle (observe → decide → act → verify → repeat)
 - After every tool result: read the real output, decide the next single action, run it, verify it.
