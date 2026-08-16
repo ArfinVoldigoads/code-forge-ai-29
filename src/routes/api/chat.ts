@@ -12,6 +12,26 @@ const bodySchema = z.object({
 // Only an explicit cancel request aborts them.
 const activeRuns = new Map<string, AbortController>();
 
+function isDirectAnswerRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+
+  const asksQuestion =
+    normalized.includes("?") ||
+    /^(?:hem\s+)?(?:apa|apakah|kenapa|mengapa|gimana|bagaimana|siapa|kapan|di\s*mana|dimana|emang|memang|kok|klok|kalau)\b/.test(
+      normalized,
+    );
+  const requestsAction =
+    /\b(?:tolong|coba|cek|periksa|jalankan|run|buat(?:kan)?|bikin|ubah|ganti|perbaiki|fix|implement|install|pasang|naikkan|naikan|resize|restart|deploy|push|download|ekstrak|ambil|cari|scrape|scrap|test|uji)\b/.test(
+      normalized,
+    );
+
+  // A word can name the subject without requesting the action (for example
+  // "scrap APK itu sama seperti scrap web kah?"). Explicit question endings
+  // win unless the user also gave a clear imperative.
+  const conceptualEnding = /\b(?:apa|apakah|gimana|bagaimana|kenapa|kah)\s*\?*$/.test(normalized);
+  return asksQuestion && (!requestsAction || conceptualEnding);
+}
 
 const THINKING_RULES = `## Thinking protocol (mandatory, repeated)
 - You have a \`think\` tool. Calling it produces a private "Thought for Ns" block in the timeline.
@@ -37,7 +57,6 @@ const THINKING_RULES = `## Thinking protocol (mandatory, repeated)
   request with request_secret, or deploys to production.
 - When work is done, run verification (build/typecheck/tests, start_dev_server + check_preview +
   screenshot for web apps), fix what fails, and only then summarize what changed.`;
-
 
 function sse(event: StreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
@@ -69,7 +88,6 @@ export const Route = createFileRoute("/api/chat")({
             headers: { "content-type": "application/json" },
           });
         }
-
 
         const { db, audit } = await import("@/lib/db.server");
         const { buildModel, isLovableGateway } = await import("@/lib/ai.server");
@@ -145,9 +163,15 @@ export const Route = createFileRoute("/api/chat")({
           )
           .eq("chat_id", chatId)
           .order("seq", { ascending: false })
-          .limit(30);
+          .limit(16);
         const history = (newestHistory ?? []).reverse();
 
+        const latestUserText =
+          [...history]
+            .reverse()
+            .find((message) => message.role === "user")
+            ?.content?.trim() ?? "";
+        const directAnswerMode = isDirectAnswerRequest(latestUserText);
 
         const skillBlock = (skills ?? [])
           .map((s) => `### ${s.name}\n${s.instructions}`)
@@ -160,11 +184,24 @@ export const Route = createFileRoute("/api/chat")({
 You reason first, then act. Be precise, concrete and honest about limitations.
 Never reveal API keys, tokens, or environment variable values.
 Format code with fenced blocks that include the language.
-- The LAST user message is the current request and has highest priority. Answer that request directly.
+- The CURRENT REQUEST below is the only task you are answering now. Answer it directly.
 - Earlier messages are context only. Never continue an older task when the latest user message changed the subject.
 - For a simple question or conversation, answer immediately without inspecting files or starting the sandbox.
 
-${THINKING_RULES}
+## CURRENT REQUEST (highest priority; do not reinterpret it as an older topic)
+<current_request>
+${latestUserText}
+</current_request>
+
+${
+  directAnswerMode
+    ? `## Direct-answer mode
+- This is a conceptual or conversational question, not an instruction to operate the sandbox.
+- Answer the exact question in the first sentence.
+- Do not inspect the environment, discuss setup requirements, continue a previous task, or offer unrelated next steps.
+- Keep the answer concise unless the user asks for detail.`
+    : THINKING_RULES
+}
 
 ## How to work (interleaved)
 Work in short cycles: think, write one or two sentences saying what you are about to do, call the tool,
@@ -252,12 +289,11 @@ they can enable execution by adding a Daytona API key in Settings → Sandbox.`
 ## Active skills
 ${skillBlock || "(none enabled)"}`;
 
-
         // User uploads: images go in as vision parts, text-ish files as extracted text.
         const attachmentPaths = history.flatMap((m) =>
-          ((m as { message_attachments?: { storage_path: string }[] }).message_attachments ?? []).map(
-            (a) => a.storage_path,
-          ),
+          (
+            (m as { message_attachments?: { storage_path: string }[] }).message_attachments ?? []
+          ).map((a) => a.storage_path),
         );
         const signedMap = new Map<string, string>();
         if (attachmentPaths.length) {
@@ -265,7 +301,8 @@ ${skillBlock || "(none enabled)"}`;
           const { data: signed } = await supabaseAdmin.storage
             .from("attachments")
             .createSignedUrls(attachmentPaths.slice(0, 50), 60 * 60);
-          for (const s of signed ?? []) if (s.path && s.signedUrl) signedMap.set(s.path, s.signedUrl);
+          for (const s of signed ?? [])
+            if (s.path && s.signedUrl) signedMap.set(s.path, s.signedUrl);
         }
 
         const messages = history
@@ -284,18 +321,17 @@ ${skillBlock || "(none enabled)"}`;
             const rawText = (m.content ?? "").trim();
             // Keep the latest exchange intact while bounding old verbose agent
             // narration so every tool step does not resend a huge stale prompt.
-            const isRecent = index >= history.length - 6;
-            const text = isRecent || rawText.length <= 6000
-              ? rawText
-              : `${rawText.slice(0, 6000)}\n[older message truncated]`;
+            const isRecent = index >= history.length - 4;
+            const text =
+              isRecent || rawText.length <= 6000
+                ? rawText
+                : `${rawText.slice(0, 2500)}\n[older message truncated]`;
             if (m.role !== "user" || files.length === 0) {
               return text.length > 0
                 ? { role: m.role as "user" | "assistant" | "system", content: text }
                 : null;
             }
-            const parts: Array<
-              { type: "text"; text: string } | { type: "image"; image: URL }
-            > = [];
+            const parts: Array<{ type: "text"; text: string } | { type: "image"; image: URL }> = [];
             if (text) parts.push({ type: "text", text });
             for (const f of files) {
               const url = signedMap.get(f.storage_path);
@@ -316,8 +352,6 @@ ${skillBlock || "(none enabled)"}`;
             return parts.length ? { role: "user" as const, content: parts } : null;
           })
           .filter((m): m is NonNullable<typeof m> => m !== null);
-
-
 
         const encoder = new TextEncoder();
         let cancelled = false;
@@ -389,11 +423,10 @@ ${skillBlock || "(none enabled)"}`;
               void queuePersist("streaming");
             };
 
-
             try {
               // ---- single autonomous loop: think → act → verify → repeat ----
               let tools: Record<string, unknown> | undefined;
-              if (sandboxKey) {
+              if (sandboxKey && !directAnswerMode) {
                 const { buildAgentTools } = await import("@/lib/agent-tools.server");
                 tools = buildAgentTools({
                   chatId,
@@ -480,14 +513,13 @@ ${skillBlock || "(none enabled)"}`;
 
               planning =
                 events
-                  .filter((e): e is Extract<StreamEvent, { type: "thought-delta" }> =>
-                    e.type === "thought-delta",
+                  .filter(
+                    (e): e is Extract<StreamEvent, { type: "thought-delta" }> =>
+                      e.type === "thought-delta",
                   )
                   .map((e) => e.text)
                   .join("\n\n")
                   .slice(0, 4000) || "";
-
-
 
               await queuePersist(cancelled ? "cancelled" : "complete");
 
@@ -525,7 +557,6 @@ ${skillBlock || "(none enabled)"}`;
             }
           },
         });
-
 
         return new Response(stream, {
           headers: {
