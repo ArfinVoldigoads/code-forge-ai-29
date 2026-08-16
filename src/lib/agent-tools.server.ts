@@ -13,7 +13,7 @@ import {
   syncEnvFile,
   WORKDIR,
 } from "@/lib/daytona.server";
-import type { Json, StreamEvent } from "@/lib/types";
+import type { Json, ProgressStep, StreamEvent } from "@/lib/types";
 
 type Ctx = {
   chatId: string;
@@ -45,6 +45,7 @@ const ghHeaders = (token: string) => ({
 export function buildAgentTools(ctx: Ctx) {
   let session: { sandbox: SandboxHandle; sessionId: string } | null = null;
   let lastMark = Date.now();
+  const progressById = new Map<string, ProgressStep[]>();
 
   const sandbox = async () => {
     if (!session) {
@@ -298,16 +299,29 @@ export function buildAgentTools(ctx: Ctx) {
           .max(12),
       }),
       execute: async ({ progressId, title, steps }) => {
+        const previous = progressById.get(progressId);
+        const normalizedSteps = previous
+          ? previous.map((original) => {
+              const update = steps.find((step) => step.label === original.label);
+              return update ? { ...original, status: update.status } : original;
+            })
+          : steps.map((step) => ({ label: step.label, status: step.status }));
+        progressById.set(progressId, normalizedSteps);
         const event: StreamEvent = {
           type: "progress",
           id: progressId,
           ...(title ? { title } : {}),
-          steps: steps.map((s) => ({ label: s.label, status: s.status })),
+          steps: normalizedSteps,
         };
         ctx.send(event);
         ctx.record(event);
         lastMark = Date.now();
-        return { ok: true, done: steps.filter((s) => s.status === "done").length };
+        return {
+          ok: true,
+          done: normalizedSteps.filter((step) => step.status === "done").length,
+          total: normalizedSteps.length,
+          remaining: normalizedSteps.filter((step) => step.status !== "done").map((step) => step.label),
+        };
       },
     }),
 
