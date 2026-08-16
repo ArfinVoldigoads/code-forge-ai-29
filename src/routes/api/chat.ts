@@ -53,6 +53,10 @@ const THINKING_RULES = `## Thinking protocol (mandatory, repeated)
 - Call \`set_progress\` again with the SAME progressId every time a step finishes or a new one starts,
   and one final time with every step "done" before your closing summary. Never skip this.
 - Only skip set_progress when the whole turn is a single short answer with no tool work.
+- NEVER end your turn while any step is still pending or running. Finishing step 1 of 5 is not finishing
+  the task — go straight into step 2 in the same turn. Five instructions means five completed steps.
+  The only legitimate pauses are ask_user and request_secret; otherwise keep working until every step is
+  done, then give the final explanation.
 
 ## Decision cycle (observe → decide → act → verify → repeat)
 - After every tool result: read the real output, decide the next single action, run it, verify it.
@@ -453,17 +457,6 @@ ${skillBlock || "(none enabled)"}`;
                       },
                     }
                   : undefined;
-              const mainOptions = {
-                model: buildModel(provider, modelRow.model_id),
-                system: systemPrompt,
-                messages,
-                abortSignal: runAbort.signal,
-                ...(lovableProviderOptions ? { providerOptions: lovableProviderOptions } : {}),
-                ...(tools ? { tools, stopWhen: stepCountIs(120) } : {}),
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              } as any;
-              const main = streamText(mainOptions);
-
               // Native reasoning (GPT-5/Gemini) renders as the same inline thought block
               // as the `think` tool, so every model looks identical in the timeline.
               let nativeThoughtId: string | null = null;
@@ -485,39 +478,100 @@ ${skillBlock || "(none enabled)"}`;
                 if (segment.trim()) events.push({ type: "step-text", text: segment });
                 segment = "";
               };
-              for await (const part of main.fullStream) {
-                if (part.type === "reasoning-delta") {
-                  if (!nativeThoughtId) {
-                    nativeThoughtId = crypto.randomUUID();
-                    nativeStartedAt = Date.now();
-                    const start: StreamEvent = { type: "thought-start", id: nativeThoughtId };
-                    send(start);
-                    events.push(start);
-                  }
-                  thinking += part.text;
-                  const delta: StreamEvent = {
-                    type: "thought-delta",
-                    id: nativeThoughtId,
-                    text: part.text,
-                  };
-                  send(delta);
-                  events.push(delta);
-                } else if (part.type === "text-delta") {
-                  closeNativeThought();
-                  answer += part.text;
-                  segment += part.text;
-                  send({ type: "assistant-delta", text: part.text });
-                } else if (part.type === "tool-call") {
-                  closeNativeThought();
-                  flushSegment();
-                } else if (part.type === "error") {
-                  throw part.error instanceof Error ? part.error : new Error(String(part.error));
-                }
-                saveSoon();
-              }
 
-              flushSegment();
-              closeNativeThought();
+              /** Unfinished steps of the newest progress card, if any. */
+              const unfinishedSteps = () => {
+                const last = [...events]
+                  .reverse()
+                  .find(
+                    (e): e is Extract<StreamEvent, { type: "progress" }> => e.type === "progress",
+                  );
+                if (!last) return null;
+                const pending = last.steps.filter((s) => s.status !== "done");
+                return pending.length ? pending : null;
+              };
+              /** The agent legitimately handed control back to the user. */
+              const waitingForUser = () =>
+                [...events]
+                  .reverse()
+                  .some(
+                    (e, i) =>
+                      i < 6 && (e.type === "ask-user" || e.type === "secret-request"),
+                  );
+
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              let convo: any[] = messages as any[];
+              const MAX_CONTINUATIONS = 6;
+
+              for (let round = 0; round <= MAX_CONTINUATIONS; round++) {
+                const mainOptions = {
+                  model: buildModel(provider, modelRow.model_id),
+                  system: systemPrompt,
+                  messages: convo,
+                  abortSignal: runAbort.signal,
+                  ...(lovableProviderOptions ? { providerOptions: lovableProviderOptions } : {}),
+                  ...(tools ? { tools, stopWhen: stepCountIs(120) } : {}),
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any;
+                const main = streamText(mainOptions);
+
+                for await (const part of main.fullStream) {
+                  if (part.type === "reasoning-delta") {
+                    if (!nativeThoughtId) {
+                      nativeThoughtId = crypto.randomUUID();
+                      nativeStartedAt = Date.now();
+                      const start: StreamEvent = { type: "thought-start", id: nativeThoughtId };
+                      send(start);
+                      events.push(start);
+                    }
+                    thinking += part.text;
+                    const delta: StreamEvent = {
+                      type: "thought-delta",
+                      id: nativeThoughtId,
+                      text: part.text,
+                    };
+                    send(delta);
+                    events.push(delta);
+                  } else if (part.type === "text-delta") {
+                    closeNativeThought();
+                    answer += part.text;
+                    segment += part.text;
+                    send({ type: "assistant-delta", text: part.text });
+                  } else if (part.type === "tool-call") {
+                    closeNativeThought();
+                    flushSegment();
+                  } else if (part.type === "error") {
+                    throw part.error instanceof Error ? part.error : new Error(String(part.error));
+                  }
+                  saveSoon();
+                }
+
+                flushSegment();
+                closeNativeThought();
+
+                if (cancelled || !tools || round === MAX_CONTINUATIONS) break;
+                const pending = unfinishedSteps();
+                if (!pending || waitingForUser()) break;
+
+                // The model stopped mid-task: feed the run back to itself with the
+                // remaining steps instead of ending the turn.
+                const response = await main.response;
+                convo = [
+                  ...convo,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  ...((response?.messages ?? []) as any[]),
+                  {
+                    role: "user",
+                    content:
+                      "[SYSTEM] Kamu berhenti padahal progress belum selesai. Langkah yang belum done: " +
+                      pending.map((s) => `"${s.label}"`).join(", ") +
+                      ". Jangan berhenti dan jangan minta izin: lanjutkan sekarang dari langkah tersebut, " +
+                      "pakai tool seperlunya, update set_progress dengan progressId yang sama, dan baru berhenti " +
+                      "setelah SEMUA langkah berstatus done plus ringkasan akhir.",
+                  },
+                ];
+                answer = answer.trimEnd() + (answer.trim() ? "\n\n" : "");
+              }
 
               planning =
                 events

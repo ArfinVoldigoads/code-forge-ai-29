@@ -210,7 +210,9 @@ export function Timeline({ blocks, chatId }: { blocks: TimelineBlock[]; chatId: 
               questions={block.questions}
             />
           );
-        if (block.kind === "progress")
+        if (block.kind === "progress") {
+          // Unfinished cards are pinned above the composer instead.
+          if (block.steps.some((s) => s.status !== "done")) return null;
           return (
             <ProgressCard
               key={block.id}
@@ -218,6 +220,7 @@ export function Timeline({ blocks, chatId }: { blocks: TimelineBlock[]; chatId: 
               steps={block.steps}
             />
           );
+        }
         return (
           <SecretForm key={block.id} chatId={chatId} reason={block.reason} keys={block.keys} />
         );

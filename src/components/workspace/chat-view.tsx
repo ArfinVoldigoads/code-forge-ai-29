@@ -6,6 +6,8 @@ import { Composer } from "./composer";
 import { MessageItem } from "./message-item";
 import { Timeline } from "./timeline";
 import { useChatStream } from "@/hooks/use-chat-stream";
+import { buildTimeline } from "@/lib/timeline";
+import { PinnedProgress } from "./pinned-progress";
 import type { MessageDTO } from "@/lib/types";
 
 type ChatQueryData = { chat: unknown; messages: MessageDTO[] };
@@ -192,6 +194,19 @@ export function ChatView({ chatId }: { chatId: string }) {
   const remoteRunning = !streaming && last?.status === "streaming";
   const showLive = streaming || live.timeline.length > 0;
 
+  // Pinned task card: the newest progress block from the live run, or from the
+  // last assistant message when the run continues in the background.
+  const activeProgress = (() => {
+    const fromLive = [...live.timeline].reverse().find((b) => b.kind === "progress");
+    if (fromLive && fromLive.kind === "progress") return fromLive;
+    const lastAssistant = [...allMessages].reverse().find((m) => m.role === "assistant");
+    if (!lastAssistant) return null;
+    const block = [...buildTimeline(lastAssistant.events)]
+      .reverse()
+      .find((b) => b.kind === "progress");
+    return block && block.kind === "progress" ? block : null;
+  })();
+
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -276,6 +291,13 @@ export function ChatView({ chatId }: { chatId: string }) {
           )}
         </div>
       </div>
+
+      {activeProgress && (
+        <PinnedProgress
+          {...(activeProgress.title ? { title: activeProgress.title } : {})}
+          steps={activeProgress.steps}
+        />
+      )}
 
       <Composer
         chatId={chatId}
