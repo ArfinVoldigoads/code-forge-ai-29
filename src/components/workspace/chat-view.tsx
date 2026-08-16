@@ -6,6 +6,8 @@ import { Composer } from "./composer";
 import { MessageItem } from "./message-item";
 import { Timeline } from "./timeline";
 import { useChatStream } from "@/hooks/use-chat-stream";
+import { buildTimeline } from "@/lib/timeline";
+import { PinnedProgress } from "./pinned-progress";
 import type { MessageDTO } from "@/lib/types";
 
 type ChatQueryData = { chat: unknown; messages: MessageDTO[] };
@@ -289,6 +291,13 @@ export function ChatView({ chatId }: { chatId: string }) {
           )}
         </div>
       </div>
+
+      {activeProgress && (
+        <PinnedProgress
+          {...(activeProgress.title ? { title: activeProgress.title } : {})}
+          steps={activeProgress.steps}
+        />
+      )}
 
       <Composer
         chatId={chatId}
