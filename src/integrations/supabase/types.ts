@@ -531,6 +531,56 @@ export type Database = {
         }
         Relationships: []
       }
+      runs: {
+        Row: {
+          chat_id: string
+          created_at: string
+          id: string
+          last_error: string | null
+          last_heartbeat: string
+          lease_until: string
+          message_id: string | null
+          request_id: string
+          round: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          chat_id: string
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          last_heartbeat?: string
+          lease_until?: string
+          message_id?: string | null
+          request_id: string
+          round?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          chat_id?: string
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          last_heartbeat?: string
+          lease_until?: string
+          message_id?: string | null
+          request_id?: string
+          round?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "runs_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sandbox_files: {
         Row: {
           action: string
