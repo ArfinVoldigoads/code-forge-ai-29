@@ -148,7 +148,10 @@ export function ChatView({ chatId }: { chatId: string }) {
       );
       await start(chatId, uuid());
     } catch (error) {
-      void refresh();
+      // Drop the placeholder bubble: nothing was persisted.
+      queryClient.setQueryData(["chat", chatId], (old: ChatQueryData | undefined) =>
+        old ? { ...old, messages: old.messages.filter((m) => m.id !== optimisticId) } : old,
+      );
       toast.error(error instanceof Error ? error.message : "Could not send the message");
     }
   }
