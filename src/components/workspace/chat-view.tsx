@@ -129,14 +129,29 @@ export function ChatView({ chatId }: { chatId: string }) {
       if (!chatQuery.data?.chat.modelId) {
         void updateChat({ data: { chatId, modelId: activeModelId } });
       }
-      await sendUserMessage({
-        data: { chatId, content, requestId: uuid(), ...(attachmentIds.length ? { attachmentIds } : {}) },
+      const requestId = uuid();
+      const saved = await sendUserMessage({
+        data: { chatId, content, requestId, ...(attachmentIds.length ? { attachmentIds } : {}) },
       });
-      // No refetch here: the optimistic bubble already renders the message and
-      // invalidating chat/sandbox queries mid-send adds seconds of jank.
+      // The row now exists in the database — swap the placeholder for its real
+      // id so the next refetch reconciles it instead of flashing a duplicate.
+      // No invalidation here: refetching chat + sandbox mid-send adds seconds of jank.
+      queryClient.setQueryData(["chat", chatId], (old: ChatQueryData | undefined) =>
+        old
+          ? {
+              ...old,
+              messages: old.messages.map((m) =>
+                m.id === optimisticId ? { ...m, id: saved.id, requestId } : m,
+              ),
+            }
+          : old,
+      );
       await start(chatId, uuid());
     } catch (error) {
-      void refresh();
+      // Drop the placeholder bubble: nothing was persisted.
+      queryClient.setQueryData(["chat", chatId], (old: ChatQueryData | undefined) =>
+        old ? { ...old, messages: old.messages.filter((m) => m.id !== optimisticId) } : old,
+      );
       toast.error(error instanceof Error ? error.message : "Could not send the message");
     }
   }
