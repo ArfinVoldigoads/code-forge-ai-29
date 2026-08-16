@@ -411,7 +411,10 @@ ${skillBlock || "(none enabled)"}`;
     if (Date.now() - lastBeat < 15_000) return;
     lastBeat = Date.now();
     const { data: row } = await db.from("runs").select("status").eq("id", runId).maybeSingle();
-    if ((row as { status?: string } | null)?.status === "cancelled") runAbort.abort();
+    if ((row as { status?: string } | null)?.status === "cancelled") {
+      runAbort.abort();
+      return;
+    }
     await db
       .from("runs")
       .update({
@@ -420,7 +423,10 @@ ${skillBlock || "(none enabled)"}`;
         last_heartbeat: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as never)
-      .eq("id", runId);
+      .eq("id", runId)
+      // A stop request can land between the status read and this update. Never
+      // revive a cancelled run in that race window.
+      .neq("status", "cancelled");
   };
   const saveSoon = () => {
     if (Date.now() - lastSave < 2000) return;

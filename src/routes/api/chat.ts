@@ -37,10 +37,25 @@ export const Route = createFileRoute("/api/chat")({
 
         if (cancel) {
           activeRuns.get(requestId)?.abort();
-          await db
-            .from("runs")
-            .update({ status: "cancelled", updated_at: new Date().toISOString() } as never)
-            .eq("request_id", requestId);
+          const now = new Date().toISOString();
+          await Promise.all([
+            db
+              .from("runs")
+              .update({
+                status: "cancelled",
+                lease_until: now,
+                last_heartbeat: now,
+                updated_at: now,
+              } as never)
+              .eq("request_id", requestId),
+            // Persist the terminal state immediately. This also clears the
+            // background spinner when execution lives in another instance.
+            db
+              .from("messages")
+              .update({ status: "cancelled" } as never)
+              .eq("request_id", requestId)
+              .eq("status", "streaming"),
+          ]);
           return new Response(JSON.stringify({ ok: true }), {
             headers: { "content-type": "application/json" },
           });
