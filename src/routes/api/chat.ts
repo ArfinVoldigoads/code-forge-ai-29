@@ -46,6 +46,14 @@ const THINKING_RULES = `## Thinking protocol (mandatory, repeated)
   4. before you declare the task done or blocked.
 - After a thought, immediately act. Never end your turn right after thinking.
 
+## Progress card (MANDATORY)
+- Any request that is not a pure question/explanation is a task. For EVERY task, your FIRST tool call
+  (right after the first \`think\`) MUST be \`set_progress\` with 3-6 short steps in the user's language,
+  e.g. "Membuat backend", "Memeriksa sistem", "Testing". Mark the first step "running".
+- Call \`set_progress\` again with the SAME progressId every time a step finishes or a new one starts,
+  and one final time with every step "done" before your closing summary. Never skip this.
+- Only skip set_progress when the whole turn is a single short answer with no tool work.
+
 ## Decision cycle (observe → decide → act → verify → repeat)
 - After every tool result: read the real output, decide the next single action, run it, verify it.
 - Use set_phase to announce phases (understanding, discovery, planning, execution, debugging, testing,
