@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Brain,
@@ -64,7 +64,7 @@ export function CollapsiblePanel({
   );
 }
 
-export function MessageItem({
+export const MessageItem = memo(function MessageItem({
   message,
   chatId,
   onEdit,
@@ -79,7 +79,7 @@ export function MessageItem({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
-  const timeline = buildTimeline(message.events);
+  const timeline = useMemo(() => buildTimeline(message.events), [message.events]);
 
 
   if (message.role === "user") {
@@ -191,4 +191,4 @@ export function MessageItem({
       </div>
     </div>
   );
-}
+});
