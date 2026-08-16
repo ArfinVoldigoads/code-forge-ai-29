@@ -501,7 +501,10 @@ ${skillBlock || "(none enabled)"}`;
 
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               let convo: any[] = messages as any[];
-              const MAX_CONTINUATIONS = 6;
+              // A long coding task can legitimately need many model turns. The old
+              // limit of six silently marked unfinished work as complete.
+              const MAX_CONTINUATIONS = 48;
+              let continuationLimitReached = false;
 
               for (let round = 0; round <= MAX_CONTINUATIONS; round++) {
                 const mainOptions = {
@@ -549,9 +552,14 @@ ${skillBlock || "(none enabled)"}`;
                 flushSegment();
                 closeNativeThought();
 
-                if (cancelled || !tools || round === MAX_CONTINUATIONS) break;
+                if (cancelled || !tools) break;
                 const pending = unfinishedSteps();
                 if (!pending || waitingForUser()) break;
+
+                if (round === MAX_CONTINUATIONS) {
+                  continuationLimitReached = true;
+                  break;
+                }
 
                 // The model stopped mid-task: feed the run back to itself with the
                 // remaining steps instead of ending the turn.
@@ -582,6 +590,12 @@ ${skillBlock || "(none enabled)"}`;
                   .map((e) => e.text)
                   .join("\n\n")
                   .slice(0, 4000) || "";
+
+              if (continuationLimitReached) {
+                throw new Error(
+                  "Agent mencapai batas pengaman lanjutan sementara progress masih belum selesai. Jalankan Retry untuk melanjutkan dari progress terakhir.",
+                );
+              }
 
               await queuePersist(cancelled ? "cancelled" : "complete");
 
