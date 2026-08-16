@@ -132,8 +132,8 @@ export function ChatView({ chatId }: { chatId: string }) {
       await sendUserMessage({
         data: { chatId, content, requestId: uuid(), ...(attachmentIds.length ? { attachmentIds } : {}) },
       });
-      // Don't block the stream on refetching the chat / sandbox queries.
-      void refresh();
+      // No refetch here: the optimistic bubble already renders the message and
+      // invalidating chat/sandbox queries mid-send adds seconds of jank.
       await start(chatId, uuid());
     } catch (error) {
       void refresh();
