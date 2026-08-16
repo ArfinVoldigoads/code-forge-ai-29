@@ -12,7 +12,7 @@ export type ProviderRow = {
   org_id?: string | null;
 };
 
-function isLovableGateway(provider: Pick<ProviderRow, "type" | "base_url">): boolean {
+export function isLovableGateway(provider: Pick<ProviderRow, "type" | "base_url">): boolean {
   if (provider.type === "lovable") return true;
   return (provider.base_url ?? "").includes("ai.gateway.lovable.dev");
 }
@@ -42,7 +42,10 @@ export function baseUrlFor(provider: Pick<ProviderRow, "type" | "base_url">): st
 export function buildModel(provider: ProviderRow, modelId: string): LanguageModel {
   const apiKey = resolveKey(provider);
   const baseURL = baseUrlFor(provider);
-  return createOpenAICompatible({ name: provider.name || "provider", apiKey, baseURL })(modelId);
+  // A stable provider id lets call sites pass Lovable-specific latency and
+  // reasoning options without coupling them to the user-facing provider name.
+  const name = isLovableGateway(provider) ? "lovable" : provider.name || "provider";
+  return createOpenAICompatible({ name, apiKey, baseURL })(modelId);
 }
 
 /** Candidate /models URLs — many gateways mount the API with or without /v1. */
