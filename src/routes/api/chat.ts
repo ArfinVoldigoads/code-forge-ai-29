@@ -72,7 +72,7 @@ export const Route = createFileRoute("/api/chat")({
 
 
         const { db, audit } = await import("@/lib/db.server");
-        const { buildModel } = await import("@/lib/ai.server");
+        const { buildModel, isLovableGateway } = await import("@/lib/ai.server");
         const { streamText, stepCountIs } = await import("ai");
 
         // Idempotency: never generate the same assistant message twice.
@@ -135,14 +135,18 @@ export const Route = createFileRoute("/api/chat")({
           .eq("enabled", true)
           .order("sort_order", { ascending: true });
 
-        const { data: history } = await db
+        // Fetch the newest messages, not the oldest ones. The old ascending
+        // limit silently dropped the user's current message after a long chat,
+        // which made answers appear unrelated.
+        const { data: newestHistory } = await db
           .from("messages")
           .select(
             "role, content, message_attachments(file_name, mime_type, storage_path, extracted_text)",
           )
           .eq("chat_id", chatId)
-          .order("seq", { ascending: true })
-          .limit(60);
+          .order("seq", { ascending: false })
+          .limit(30);
+        const history = (newestHistory ?? []).reverse();
 
 
         const skillBlock = (skills ?? [])
@@ -156,6 +160,9 @@ export const Route = createFileRoute("/api/chat")({
 You reason first, then act. Be precise, concrete and honest about limitations.
 Never reveal API keys, tokens, or environment variable values.
 Format code with fenced blocks that include the language.
+- The LAST user message is the current request and has highest priority. Answer that request directly.
+- Earlier messages are context only. Never continue an older task when the latest user message changed the subject.
+- For a simple question or conversation, answer immediately without inspecting files or starting the sandbox.
 
 ${THINKING_RULES}
 
@@ -247,7 +254,7 @@ ${skillBlock || "(none enabled)"}`;
 
 
         // User uploads: images go in as vision parts, text-ish files as extracted text.
-        const attachmentPaths = (history ?? []).flatMap((m) =>
+        const attachmentPaths = history.flatMap((m) =>
           ((m as { message_attachments?: { storage_path: string }[] }).message_attachments ?? []).map(
             (a) => a.storage_path,
           ),
@@ -261,8 +268,8 @@ ${skillBlock || "(none enabled)"}`;
           for (const s of signed ?? []) if (s.path && s.signedUrl) signedMap.set(s.path, s.signedUrl);
         }
 
-        const messages = (history ?? [])
-          .map((m) => {
+        const messages = history
+          .map((m, index) => {
             const files =
               (
                 m as {
@@ -274,7 +281,13 @@ ${skillBlock || "(none enabled)"}`;
                   }[];
                 }
               ).message_attachments ?? [];
-            const text = (m.content ?? "").trim();
+            const rawText = (m.content ?? "").trim();
+            // Keep the latest exchange intact while bounding old verbose agent
+            // narration so every tool step does not resend a huge stale prompt.
+            const isRecent = index >= history.length - 6;
+            const text = isRecent || rawText.length <= 6000
+              ? rawText
+              : `${rawText.slice(0, 6000)}\n[older message truncated]`;
             if (m.role !== "user" || files.length === 0) {
               return text.length > 0
                 ? { role: m.role as "user" | "assistant" | "system", content: text }
@@ -360,11 +373,20 @@ ${skillBlock || "(none enabled)"}`;
                 .eq("id", messageId);
             };
 
+            // Serialize database writes. Previously an older fire-and-forget
+            // "streaming" write could finish after the final "complete" write
+            // and erase the last timeline events or revert the status.
+            let persistChain = Promise.resolve();
+            const queuePersist = (status: string, error?: string) => {
+              persistChain = persistChain.then(() => persist(status, error));
+              return persistChain;
+            };
+
             let lastSave = Date.now();
             const saveSoon = () => {
               if (Date.now() - lastSave < 2000) return;
               lastSave = Date.now();
-              void persist("streaming");
+              void queuePersist("streaming");
             };
 
 
@@ -381,11 +403,21 @@ ${skillBlock || "(none enabled)"}`;
                 });
               }
 
+              const lovableProviderOptions =
+                isLovableGateway(provider) && modelRow.model_id === "openai/gpt-5.4"
+                  ? {
+                      lovable: {
+                        reasoningEffort: "none",
+                        serviceTier: "priority",
+                      },
+                    }
+                  : undefined;
               const mainOptions = {
                 model: buildModel(provider, modelRow.model_id),
                 system: systemPrompt,
                 messages,
                 abortSignal: runAbort.signal,
+                ...(lovableProviderOptions ? { providerOptions: lovableProviderOptions } : {}),
                 ...(tools ? { tools, stopWhen: stepCountIs(120) } : {}),
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
               } as any;
@@ -457,7 +489,7 @@ ${skillBlock || "(none enabled)"}`;
 
 
 
-              await persist(cancelled ? "cancelled" : "complete");
+              await queuePersist(cancelled ? "cancelled" : "complete");
 
               await db
                 .from("chats")
@@ -475,12 +507,12 @@ ${skillBlock || "(none enabled)"}`;
                 cancelled ||
                 (error instanceof Error && /abort|cancel/i.test(error.name + error.message));
               if (aborted) {
-                await persist("cancelled");
+                await queuePersist("cancelled");
                 send({ type: "cancelled" });
               } else {
                 const message = error instanceof Error ? error.message : "Generation failed";
                 console.error("[chat] generation failed:", message);
-                await persist("error", message);
+                await queuePersist("error", message);
                 send({ type: "error", message: message.slice(0, 800) });
               }
             } finally {
