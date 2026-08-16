@@ -162,11 +162,9 @@ export async function executeRun(spec: RunSpec): Promise<RunOutcome> {
   let planning = ((existingMessage as { planning?: string } | null)?.planning ?? "") as string;
   let thinking = ((existingMessage as { thinking?: string | null } | null)?.thinking ??
     "") as string;
-  const events: StreamEvent[] = Array.isArray(
-    (existingMessage as { events?: unknown } | null)?.events,
-  )
-    ? ((existingMessage as { events: StreamEvent[] }).events as StreamEvent[])
-    : [];
+  const rawEvents = (existingMessage as { events?: unknown } | null)?.events;
+  const events: StreamEvent[] = Array.isArray(rawEvents) ? (rawEvents as StreamEvent[]) : [];
+
   const resuming = Boolean(existingMessage);
 
   if (!messageId) {
