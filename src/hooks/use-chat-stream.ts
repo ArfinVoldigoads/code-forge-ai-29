@@ -32,20 +32,23 @@ export function useChatStream(onFinish: () => void | Promise<void>) {
   const [live, setLive] = useState<LiveState>(EMPTY);
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const cancelRef = useRef<Promise<void> | null>(null);
 
   const runRef = useRef<{ chatId: string; requestId: string } | null>(null);
 
   const stop = useCallback(() => {
     const run = runRef.current;
+    abortRef.current?.abort();
     if (run) {
-      void fetch("/api/chat", {
+      cancelRef.current = fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...run, cancel: true }),
         keepalive: true,
-      }).catch(() => {});
+      })
+        .then(() => undefined)
+        .catch(() => undefined);
     }
-    abortRef.current?.abort();
   }, []);
 
 
@@ -110,6 +113,10 @@ export function useChatStream(onFinish: () => void | Promise<void>) {
         setStreaming(false);
         abortRef.current = null;
         runRef.current = null;
+        // Wait until the durable run/message rows are terminal before the
+        // refetch, otherwise the UI briefly sees `streaming` and spins again.
+        await cancelRef.current;
+        cancelRef.current = null;
         // Keep the finished timeline on screen until the persisted message has
         // been refetched — otherwise thinking/tool blocks blink away.
         try {
