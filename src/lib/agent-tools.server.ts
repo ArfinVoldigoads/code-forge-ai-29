@@ -13,7 +13,7 @@ import {
   syncEnvFile,
   WORKDIR,
 } from "@/lib/daytona.server";
-import type { Json, StreamEvent } from "@/lib/types";
+import type { Json, ProgressStep, StreamEvent } from "@/lib/types";
 
 type Ctx = {
   chatId: string;
@@ -45,6 +45,7 @@ const ghHeaders = (token: string) => ({
 export function buildAgentTools(ctx: Ctx) {
   let session: { sandbox: SandboxHandle; sessionId: string } | null = null;
   let lastMark = Date.now();
+  const progressById = new Map<string, ProgressStep[]>();
 
   const sandbox = async () => {
     if (!session) {
