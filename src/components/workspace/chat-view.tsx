@@ -132,8 +132,8 @@ export function ChatView({ chatId }: { chatId: string }) {
       await sendUserMessage({
         data: { chatId, content, requestId: uuid(), ...(attachmentIds.length ? { attachmentIds } : {}) },
       });
-      // Don't block the stream on refetching the chat / sandbox queries.
-      void refresh();
+      // No refetch here: the optimistic bubble already renders the message and
+      // invalidating chat/sandbox queries mid-send adds seconds of jank.
       await start(chatId, uuid());
     } catch (error) {
       void refresh();
@@ -195,6 +195,14 @@ export function ChatView({ chatId }: { chatId: string }) {
       toast.error(error instanceof Error ? error.message : "Edit failed");
     }
   }
+
+  // Stable identities so memoized message rows don't re-render on every poll.
+  const editRef = useRef(edit);
+  editRef.current = edit;
+  const retryRef = useRef(retry);
+  retryRef.current = retry;
+  const onEdit = useCallback((id: string, content: string) => void editRef.current(id, content), []);
+  const onRetry = useCallback((id: string) => void retryRef.current(id), []);
 
   const allMessages = chatQuery.data?.messages ?? [];
   const last = allMessages[allMessages.length - 1];
@@ -264,8 +272,8 @@ export function ChatView({ chatId }: { chatId: string }) {
               key={message.id}
               message={message}
               chatId={chatId}
-              onEdit={edit}
-              onRetry={retry}
+              onEdit={onEdit}
+              onRetry={onRetry}
               busy={streaming}
             />
           ))}
