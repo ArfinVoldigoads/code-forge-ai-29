@@ -10,7 +10,7 @@ import { buildTimeline } from "@/lib/timeline";
 import { PinnedProgress } from "./pinned-progress";
 import type { MessageDTO } from "@/lib/types";
 
-type ChatQueryData = { chat: unknown; messages: MessageDTO[] };
+type ChatQueryData = { chat: { modelId: string | null } & Record<string, unknown>; messages: MessageDTO[] };
 
 import { listModels } from "@/lib/settings.functions";
 import {
@@ -58,9 +58,21 @@ export function ChatView({ chatId }: { chatId: string }) {
 
   const pickModel = useMutation({
     mutationFn: (modelId: string) => updateChat({ data: { chatId, modelId } }),
-    onSuccess: refresh,
-    onError: (e: Error) => toast.error(e.message),
+    // Switching a model only changes one field — update the cache in place so
+    // the picker responds instantly instead of refetching chat + sandbox state.
+    onMutate: (modelId: string) => {
+      const previous = queryClient.getQueryData<ChatQueryData>(["chat", chatId]);
+      queryClient.setQueryData(["chat", chatId], (old: ChatQueryData | undefined) =>
+        old ? { ...old, chat: { ...old.chat, modelId } } : old,
+      );
+      return { previous };
+    },
+    onError: (e: Error, _modelId, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["chat", chatId], ctx.previous);
+      toast.error(e.message);
+    },
   });
+
 
   const scrollToBottom = () => {
     const el = scrollRef.current;
