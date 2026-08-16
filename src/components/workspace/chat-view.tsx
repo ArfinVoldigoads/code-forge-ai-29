@@ -10,7 +10,7 @@ import { buildTimeline } from "@/lib/timeline";
 import { PinnedProgress } from "./pinned-progress";
 import type { MessageDTO } from "@/lib/types";
 
-type ChatQueryData = { chat: unknown; messages: MessageDTO[] };
+type ChatQueryData = { chat: { modelId: string | null } & Record<string, unknown>; messages: MessageDTO[] };
 
 import { listModels } from "@/lib/settings.functions";
 import {
