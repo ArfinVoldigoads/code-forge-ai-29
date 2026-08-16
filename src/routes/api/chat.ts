@@ -12,6 +12,27 @@ const bodySchema = z.object({
 // Only an explicit cancel request aborts them.
 const activeRuns = new Map<string, AbortController>();
 
+function isDirectAnswerRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+
+  const asksQuestion =
+    normalized.includes("?") ||
+    /^(?:hem\s+)?(?:apa|apakah|kenapa|mengapa|gimana|bagaimana|siapa|kapan|di\s*mana|dimana|emang|memang|kok|klok|kalau)\b/.test(
+      normalized,
+    );
+  const requestsAction =
+    /\b(?:tolong|coba|cek|periksa|jalankan|run|buat(?:kan)?|bikin|ubah|ganti|perbaiki|fix|implement|install|pasang|naikkan|naikan|resize|restart|deploy|push|download|ekstrak|ambil|cari|scrape|scrap|test|uji)\b/.test(
+      normalized,
+    );
+
+  // A word can name the subject without requesting the action (for example
+  // "scrap APK itu sama seperti scrap web kah?"). Explicit question endings
+  // win unless the user also gave a clear imperative.
+  const conceptualEnding = /\b(?:apa|apakah|gimana|bagaimana|kenapa|kah)\s*\?*$/.test(normalized);
+  return asksQuestion && (!requestsAction || conceptualEnding);
+}
+
 
 const THINKING_RULES = `## Thinking protocol (mandatory, repeated)
 - You have a \`think\` tool. Calling it produces a private "Thought for Ns" block in the timeline.
@@ -145,8 +166,14 @@ export const Route = createFileRoute("/api/chat")({
           )
           .eq("chat_id", chatId)
           .order("seq", { ascending: false })
-          .limit(30);
+          .limit(16);
         const history = (newestHistory ?? []).reverse();
+
+        const latestUserText = [...history]
+          .reverse()
+          .find((message) => message.role === "user")
+          ?.content?.trim() ?? "";
+        const directAnswerMode = isDirectAnswerRequest(latestUserText);
 
 
         const skillBlock = (skills ?? [])
@@ -160,11 +187,24 @@ export const Route = createFileRoute("/api/chat")({
 You reason first, then act. Be precise, concrete and honest about limitations.
 Never reveal API keys, tokens, or environment variable values.
 Format code with fenced blocks that include the language.
-- The LAST user message is the current request and has highest priority. Answer that request directly.
+- The CURRENT REQUEST below is the only task you are answering now. Answer it directly.
 - Earlier messages are context only. Never continue an older task when the latest user message changed the subject.
 - For a simple question or conversation, answer immediately without inspecting files or starting the sandbox.
 
-${THINKING_RULES}
+## CURRENT REQUEST (highest priority; do not reinterpret it as an older topic)
+<current_request>
+${latestUserText}
+</current_request>
+
+${
+  directAnswerMode
+    ? `## Direct-answer mode
+- This is a conceptual or conversational question, not an instruction to operate the sandbox.
+- Answer the exact question in the first sentence.
+- Do not inspect the environment, discuss setup requirements, continue a previous task, or offer unrelated next steps.
+- Keep the answer concise unless the user asks for detail.`
+    : THINKING_RULES
+}
 
 ## How to work (interleaved)
 Work in short cycles: think, write one or two sentences saying what you are about to do, call the tool,
@@ -284,10 +324,10 @@ ${skillBlock || "(none enabled)"}`;
             const rawText = (m.content ?? "").trim();
             // Keep the latest exchange intact while bounding old verbose agent
             // narration so every tool step does not resend a huge stale prompt.
-            const isRecent = index >= history.length - 6;
+            const isRecent = index >= history.length - 4;
             const text = isRecent || rawText.length <= 6000
               ? rawText
-              : `${rawText.slice(0, 6000)}\n[older message truncated]`;
+              : `${rawText.slice(0, 2500)}\n[older message truncated]`;
             if (m.role !== "user" || files.length === 0) {
               return text.length > 0
                 ? { role: m.role as "user" | "assistant" | "system", content: text }
@@ -393,7 +433,7 @@ ${skillBlock || "(none enabled)"}`;
             try {
               // ---- single autonomous loop: think → act → verify → repeat ----
               let tools: Record<string, unknown> | undefined;
-              if (sandboxKey) {
+              if (sandboxKey && !directAnswerMode) {
                 const { buildAgentTools } = await import("@/lib/agent-tools.server");
                 tools = buildAgentTools({
                   chatId,
