@@ -441,7 +441,7 @@ ${skillBlock || "(none enabled)"}`;
                   ? {
                       lovable: {
                         reasoningEffort: "none",
-                        serviceTier: "priority",
+                        service_tier: "priority",
                       },
                     }
                   : undefined;
