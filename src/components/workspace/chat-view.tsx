@@ -196,6 +196,14 @@ export function ChatView({ chatId }: { chatId: string }) {
     }
   }
 
+  // Stable identities so memoized message rows don't re-render on every poll.
+  const editRef = useRef(edit);
+  editRef.current = edit;
+  const retryRef = useRef(retry);
+  retryRef.current = retry;
+  const onEdit = useCallback((id: string, content: string) => void editRef.current(id, content), []);
+  const onRetry = useCallback((id: string) => void retryRef.current(id), []);
+
   const allMessages = chatQuery.data?.messages ?? [];
   const last = allMessages[allMessages.length - 1];
   // While we stream locally the live timeline already shows the current run, so
