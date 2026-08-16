@@ -20,6 +20,7 @@ import { Route as SettingsProvidersRouteImport } from './routes/settings.provide
 import { Route as SettingsSandboxRouteImport } from './routes/settings.sandbox'
 import { Route as SettingsSearchRouteImport } from './routes/settings.search'
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
+import { Route as ApiPublicRunTickRouteImport } from './routes/api/public/run-tick'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -76,6 +77,11 @@ const SettingsSkillsRoute = SettingsSkillsRouteImport.update({
   path: '/skills',
   getParentRoute: () => SettingsRoute,
 } as any)
+const ApiPublicRunTickRoute = ApiPublicRunTickRouteImport.update({
+  id: '/api/public/run-tick',
+  path: '/api/public/run-tick',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/settings/sandbox': typeof SettingsSandboxRoute
   '/settings/search': typeof SettingsSearchRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/api/public/run-tick': typeof ApiPublicRunTickRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/settings/sandbox': typeof SettingsSandboxRoute
   '/settings/search': typeof SettingsSearchRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/api/public/run-tick': typeof ApiPublicRunTickRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/settings/sandbox': typeof SettingsSandboxRoute
   '/settings/search': typeof SettingsSearchRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/api/public/run-tick': typeof ApiPublicRunTickRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
     | '/settings/sandbox'
     | '/settings/search'
     | '/settings/skills'
+    | '/api/public/run-tick'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +154,7 @@ export interface FileRouteTypes {
     | '/settings/sandbox'
     | '/settings/search'
     | '/settings/skills'
+    | '/api/public/run-tick'
   id:
     | '__root__'
     | '/'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/settings/sandbox'
     | '/settings/search'
     | '/settings/skills'
+    | '/api/public/run-tick'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -165,6 +177,7 @@ export interface RootRouteChildren {
   UnlockRoute: typeof UnlockRoute
   ApiChatRoute: typeof ApiChatRoute
   ChatChatIdRoute: typeof ChatChatIdRoute
+  ApiPublicRunTickRoute: typeof ApiPublicRunTickRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -246,6 +259,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSkillsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/api/public/run-tick': {
+      id: '/api/public/run-tick'
+      path: '/api/public/run-tick'
+      fullPath: '/api/public/run-tick'
+      preLoaderRoute: typeof ApiPublicRunTickRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -277,6 +297,7 @@ const rootRouteChildren: RootRouteChildren = {
   UnlockRoute: UnlockRoute,
   ApiChatRoute: ApiChatRoute,
   ChatChatIdRoute: ChatChatIdRoute,
+  ApiPublicRunTickRoute: ApiPublicRunTickRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

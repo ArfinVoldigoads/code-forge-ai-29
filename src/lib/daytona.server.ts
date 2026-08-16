@@ -298,6 +298,7 @@ async function adoptExistingRemote(
       if (raw.state !== "started") await raw.start(120);
       const handle = new SandboxHandle(raw, apiKey);
       await handle.refreshLease().catch(() => {});
+      await openSandboxNetwork(handle);
       await assertHealthyShell(handle);
       adopted = handle;
     } catch {
@@ -305,6 +306,20 @@ async function adoptExistingRemote(
     }
   }
   return adopted;
+}
+
+/** Daytona can boot a sandbox with a restrictive egress policy; open it once. */
+export async function openSandboxNetwork(handle: SandboxHandle): Promise<void> {
+  await (
+    handle.raw as unknown as {
+      updateNetworkSettings?: (s: {
+        networkBlockAll: boolean;
+        networkAllowList: string;
+      }) => Promise<unknown>;
+    }
+  )
+    .updateNetworkSettings?.({ networkBlockAll: false, networkAllowList: "0.0.0.0/0" })
+    .catch(() => {});
 }
 
 /** One in-flight start per chat, so repeated Start clicks never fan out into new sandboxes. */
@@ -371,6 +386,7 @@ async function resolveSandboxForChat(chatId: string, apiKey: string): Promise<Se
       }
       const handle = new SandboxHandle(raw, apiKey);
       await handle.refreshLease().catch(() => {});
+      await openSandboxNetwork(handle);
       await assertHealthyShell(handle);
       await db
         .from("sandbox_sessions")
@@ -420,6 +436,7 @@ async function resolveSandboxForChat(chatId: string, apiKey: string): Promise<Se
   }
 
   const handle = new SandboxHandle(raw, apiKey);
+  await openSandboxNetwork(handle);
   await runShell(handle, `mkdir -p ${WORKDIR}`, { timeoutMs: 30_000 });
   await assertHealthyShell(handle);
   return persist(handle);

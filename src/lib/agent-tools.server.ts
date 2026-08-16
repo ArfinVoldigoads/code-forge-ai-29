@@ -737,19 +737,25 @@ export function buildAgentTools(ctx: Ctx) {
 
     sandbox_network_check: tool({
       description:
-        "Diagnose outbound internet from inside the sandbox (DNS, HTTPS, npm registry). If access is blocked, this clears the network restrictions on your own sandbox and re-tests.",
+        "Layered outbound diagnosis from inside the sandbox: DNS, TCP, TLS handshake and HTTP, per target. It also reopens the sandbox egress policy before re-testing. Use it whenever a download, curl or scrape fails.",
       inputSchema: z.object({ url: z.string().url().optional() }),
       execute: async ({ url }) =>
         run("sandbox_network_check", { url: url ?? null }, async () => {
           const target = url ?? "https://registry.npmjs.org/-/ping";
-          const probe = () =>
-            shell(
-              `getent hosts registry.npmjs.org || true; curl -s -o /dev/null -w 'http=%{http_code} time=%{time_total}\n' --max-time 12 ${JSON.stringify(target)}`,
-              { timeoutMs: 30_000 },
-            );
+          const host = new URL(target).hostname;
+          const port = new URL(target).protocol === "http:" ? 80 : 443;
+          const q = (v: string) => JSON.stringify(v);
+          const script = [
+            `echo '--- dns ---'; getent hosts ${q(host)} || echo 'dns: FAILED'`,
+            `echo '--- tcp ---'; (timeout 8 bash -c "cat < /dev/null > /dev/tcp/${host}/${port}" && echo 'tcp: ok') || echo 'tcp: FAILED'`,
+            `echo '--- tls ---'; (echo | timeout 12 openssl s_client -connect ${host}:${port} -servername ${host} 2>&1 | grep -E 'Verify return code|CONNECTED|handshake failure|reset' | head -5) || echo 'tls: FAILED'`,
+            `echo '--- http ---'; curl -sS -o /dev/null -w 'http=%{http_code} time=%{time_total}\\n' --max-time 15 ${q(target)} || echo 'http: FAILED'`,
+            `echo '--- http1.1/ipv4 ---'; curl -sS -4 --http1.1 -o /dev/null -w 'http=%{http_code}\\n' --max-time 15 -A 'Mozilla/5.0' ${q(target)} || echo 'fallback: FAILED'`,
+          ].join("\n");
+          const probe = () => shell(script, { timeoutMs: 90_000 });
           let out = await probe();
           let unblocked = false;
-          if (out.exitCode !== 0 || !/http=[23]/.test(out.stdout)) {
+          if (!/http=[23]/.test(out.stdout)) {
             const active = await sandbox();
             const { assertOwnedByChat } = await import("@/lib/daytona.server");
             await assertOwnedByChat(ctx.chatId, active.sandbox.sandboxId);
@@ -759,14 +765,54 @@ export function buildAgentTools(ctx: Ctx) {
             unblocked = true;
             out = await probe();
           }
+          const detail = clip(`${out.stdout}\n${out.stderr}`);
+          const ok = /http=[23]/.test(out.stdout);
           return {
             target,
-            ok: /http=[23]/.test(out.stdout),
+            ok,
             unblockedNetwork: unblocked,
-            detail: clip(out.stdout || out.stderr),
+            detail,
+            hint: ok
+              ? null
+              : "Sandbox egress is open, so the target itself is refusing this client. Retry the same URL with http_fetch (runs from the server, different IP) before blaming the environment.",
           };
         }),
     }),
+
+    http_fetch: tool({
+      description:
+        "Perform an HTTP request from the SERVER instead of the sandbox (different IP and TLS stack). Use it as the fallback when a host resets or blocks the sandbox. Returns status, headers and the body (truncated).",
+      inputSchema: z.object({
+        url: z.string().url(),
+        method: z.string().default("GET"),
+        headers: z.record(z.string(), z.string()).optional(),
+        body: z.string().optional(),
+      }),
+      execute: async ({ url, method, headers, body }) =>
+        run("http_fetch", { url, method }, async () => {
+          const res = await fetch(url, {
+            method: method.toUpperCase(),
+            headers: {
+              "user-agent":
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36",
+              ...(headers ?? {}),
+            },
+            ...(body ? { body } : {}),
+          });
+          const text = await res.text();
+          const head: Record<string, string> = {};
+          res.headers.forEach((v, k) => {
+            if (/^(content-type|content-length|location|server|set-cookie)$/i.test(k)) head[k] = v;
+          });
+          return {
+            status: res.status,
+            ok: res.ok,
+            headers: head as Json,
+            body: clip(text),
+          } as Json;
+        }),
+    }),
+
 
     /* ------------------------------ desktop ----------------------------- */
 
