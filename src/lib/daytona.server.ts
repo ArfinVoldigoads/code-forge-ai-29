@@ -32,8 +32,14 @@ export async function getDaytonaSettings(): Promise<SandboxConfig> {
 
 /** The API key for the sandbox engine, or null when it has not been configured. */
 export async function getSandboxApiKey(): Promise<string | null> {
+  const { isVpsMode } = await import("./vps.server");
+  // In VPS mode there is no sandbox provider key; a sentinel keeps every
+  // "is execution configured?" check working unchanged.
+  if (await isVpsMode()) return VPS_KEY;
   return (await getDaytonaSettings()).apiKey;
 }
+
+export const VPS_KEY = "vps";
 
 export function daytonaClient(apiKey: string, cfg?: Partial<SandboxConfig>): Daytona {
   return new Daytona({
