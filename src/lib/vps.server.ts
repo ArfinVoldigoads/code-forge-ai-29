@@ -197,10 +197,10 @@ function buildRaw(cfg: VpsConfig) {
         `nproc; free -g | awk '/Mem:/{print $2}'; df -BG --output=size ${WORKDIR} | tail -1 | tr -dc '0-9'`,
         { timeoutMs: 30_000 },
       );
-      const [cpu, mem, disk] = res.stdout.split("\n").map((v) => Number.parseInt(v.trim(), 10));
-      if (Number.isFinite(cpu)) specs.cpu = cpu;
-      if (Number.isFinite(mem)) specs.memory = mem;
-      if (Number.isFinite(disk)) specs.disk = disk;
+      const nums = res.stdout.split("\n").map((v) => Number.parseInt(v.trim(), 10));
+      if (Number.isFinite(nums[0])) specs.cpu = nums[0] as number;
+      if (Number.isFinite(nums[1])) specs.memory = nums[1] as number;
+      if (Number.isFinite(nums[2])) specs.disk = nums[2] as number;
     },
     /** "Restart" = clear the background processes agentkit started. */
     stop: async () => {
